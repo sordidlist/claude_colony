@@ -444,19 +444,17 @@ fn paint_barn_hi(img: &mut Image) {
     plot(img, 80, 2, brass_dk);
 
     // ── Gambrel roof ───────────────────────────────────────────────
-    // Real American barns have a *dramatic* contrast between the two
-    // pitches: upper near-vertical (~70° from horizontal), lower
-    // near-horizontal (~22°). Anything subtler and the bend disappears
-    // and the roof reads as a single triangle. Knee placed at ~1/3
-    // down from the top so the iconic long shallow lower pitch
-    // dominates the silhouette.
+    // VERY dramatic gambrel — upper nearly vertical, lower nearly
+    // horizontal, with a hard trim line at the knee so the bend reads
+    // unmistakably. Anything less extreme and the roof reads as a
+    // single straight pitch.
     let ridge_y  = 11i32;          // flat ridge band (2 rows)
-    let peak_y   = 13i32;          // first sloping row
-    let knee_y   = 23i32;          // bend at ~1/3 down
+    let peak_y   = 13i32;
+    let knee_y   = 26i32;          // ~1/3 down from peak; matches real-barn proportions
     let eaves_y  = 44i32;
-    let upper_w  = 14i32;          // half-width at top of slopes
-    let knee_w   = 18i32;          // very small expansion in upper (steep)
-    let eaves_w  = 70i32;          // big expansion in lower (shallow)
+    let upper_w  = 12i32;
+    let knee_w   = 14i32;          // ~zero widening — upper is essentially a vertical box
+    let eaves_w  = 72i32;          // huge widening below — lower is the long shallow flare
     let centre_x = 72i32;
 
     // Flat ridge cap (rows 11-12), wider than the cupola so it
@@ -481,15 +479,11 @@ fn paint_barn_hi(img: &mut Image) {
         let stagger = if shingle_row & 1 == 0 { 0 } else { 3 };
         for x in l..=r {
             let on_edge = x == l || x == r || x == l + 1 || x == r - 1;
-            // Mark the gambrel knee with a darker band so the bend reads
-            // clearly even at small visible sizes
-            let on_knee = y == knee_y || y == knee_y + 1;
             let shingle_x_in = (x + stagger).rem_euclid(6);
             let shingle_idx  = (x + stagger).div_euclid(6);
             let aged = ((shingle_idx.wrapping_mul(13)
                        ^ shingle_row.wrapping_mul(31)) & 7) == 0;
             let c = if on_edge          { shingle_dk }
-                    else if on_knee     { shingle_dark }
                     else if shingle_y_in == 0 { shingle_hi }
                     else if shingle_y_in == 2 { shingle_dark }
                     else if shingle_x_in == 0 { shingle_dark }
@@ -500,6 +494,21 @@ fn paint_barn_hi(img: &mut Image) {
                     };
             plot(img, x, y, c);
         }
+    }
+
+    // ── Knee trim band ────────────────────────────────────────────
+    // Hard horizontal cream trim where the two pitches meet. This is
+    // what every real gambrel barn has — a fascia board at the knee
+    // — and it's the single most decisive visual cue that turns "is
+    // this even a gambrel?" into "obviously a barn." Spans the full
+    // width of the roof at the knee row.
+    let knee_half = knee_w + 1;
+    let knee_l = centre_x - knee_half;
+    let knee_r = centre_x + knee_half;
+    for x in knee_l..=knee_r {
+        plot(img, x, knee_y - 1, trim_dk);
+        plot(img, x, knee_y,     trim_mid);
+        plot(img, x, knee_y + 1, trim_dk);
     }
 
     // ── Eave trim band ─────────────────────────────────────────────
