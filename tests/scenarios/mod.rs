@@ -107,6 +107,19 @@ impl Scenario {
         self
     }
 
+    /// Force the return flow field to rebuild against the current tile
+    /// state. Scenarios carve their own world after `App::new`, so the
+    /// initial flow field doesn't reflect the test layout — call this
+    /// after carving so workers can navigate the test geometry from the
+    /// first frame instead of waiting for the periodic rebuild.
+    pub fn rebuild_flow_field(&mut self) -> &mut Self {
+        self.app.world.resource_scope::<colony::world::ReturnFlowField, _>(|world, mut field| {
+            let grid = world.resource::<TileGrid>();
+            field.rebuild(grid);
+        });
+        self
+    }
+
     /// Spawn a worker ant at a tile centre with optional cargo.
     pub fn spawn_worker(&mut self, x: i32, y: i32, debris: Option<TileType>) -> Entity {
         let pos = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);

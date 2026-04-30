@@ -14,7 +14,7 @@ use crate::config::*;
 use crate::sim::{self, *};
 use crate::sim::components::{Spider, RivalAnt};
 use crate::sim::history::{History, Snapshot, capture_snapshot, restore_snapshot};
-use crate::world::{TileGrid, PheromoneGrid, WaterGrid, DigJobs, ExploredGrid, dig_jobs};
+use crate::world::{TileGrid, PheromoneGrid, WaterGrid, DigJobs, ExploredGrid, ReturnFlowField, dig_jobs};
 
 pub struct App {
     pub world:    World,
@@ -34,6 +34,8 @@ impl App {
         let jobs  = DigJobs::new(seed);
         let spatial = sim::SpatialGrid::new();
         let explored = ExploredGrid::new(WORLD_WIDTH, WORLD_HEIGHT);
+        let mut flow = ReturnFlowField::new(WORLD_WIDTH, WORLD_HEIGHT);
+        flow.rebuild(&grid);
 
         world.insert_resource(grid);
         world.insert_resource(phero);
@@ -41,6 +43,7 @@ impl App {
         world.insert_resource(jobs);
         world.insert_resource(spatial);
         world.insert_resource(explored);
+        world.insert_resource(flow);
         world.insert_resource(sim::Time::default());
         world.insert_resource(sim::Population::default());
         world.insert_resource(sim::EventLog::default());
@@ -83,6 +86,7 @@ impl App {
             sim::lifecycle::update_population,
             sim::scenery::animate_scenery,
             crate::world::dirt_physics::settle_above_ground,
+            crate::world::flow_field::maintain_flow_field,
             milestone_events,
         ).chain().after(sim::brood::mature_brood));
 

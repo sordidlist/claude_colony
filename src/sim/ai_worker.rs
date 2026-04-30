@@ -11,16 +11,16 @@
 use bevy_ecs::prelude::*;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use crate::config::*;
-use crate::world::{TileGrid, TileType, PheromoneGrid, PheromoneChannel, DigJobs};
+use crate::world::{TileGrid, TileType, PheromoneGrid, PheromoneChannel, DigJobs, ReturnFlowField};
 use super::components::*;
 use super::Time;
 use super::EventLog;
 
-const COLONY_ENTRANCE: (i32, i32) = (COLONY_X, COLONY_Y);
 
 pub fn worker_ai(
     time:        Res<Time>,
     grid:        Res<TileGrid>,
+    field:       Res<ReturnFlowField>,
     mut phero:   ResMut<PheromoneGrid>,
     mut jobs:    ResMut<DigJobs>,
     mut q:       Query<(Entity, &mut Position, &mut Velocity, &mut WorkerBrain,
@@ -43,13 +43,14 @@ pub fn worker_ai(
         match brain.mode {
             WorkerMode::Wander       => step_wander(&mut pos, &mut vel, &grid, &mut rng),
             WorkerMode::SeekFood     => step_seek_food(&mut pos, &mut vel, &phero, &grid, &mut rng),
-            WorkerMode::ReturnHome   => step_return(&mut pos, &mut vel, &grid),
+            WorkerMode::ReturnHome   => step_return(&mut pos, &mut vel, &field),
             WorkerMode::Dig          => {
                 step_dig(e, &mut pos, &mut vel, &mut brain, &mut vis, &mut cargo,
                          &grid, &mut jobs, dt);
             }
             WorkerMode::DepositDebris => {
-                step_deposit_debris(&mut pos, &mut vel, &mut brain, &mut cargo, &grid, &mut rng);
+                step_deposit_debris(&mut pos, &mut vel, &mut brain, &mut cargo,
+                                    &grid, &field, &mut rng);
             }
             WorkerMode::FightBack => {
                 step_fight_back(&mut pos, &mut vel, &phero, &mut rng);
@@ -250,25 +251,35 @@ fn step_fight_back(
     }
 }
 
-fn step_return(pos: &mut Position, vel: &mut Velocity, _grid: &TileGrid) {
-    let dx = COLONY_ENTRANCE.0 as f32 + 0.5 - pos.0.x;
-    let dy = COLONY_ENTRANCE.1 as f32 + 0.5 - pos.0.y;
+fn step_return(pos: &mut Position, vel: &mut Velocity, field: &ReturnFlowField) {
+    let tx = pos.0.x as i32;
+    let ty = pos.0.y as i32;
+    let (dx, dy) = field.step(tx, ty);
 
-    // Underground: prioritise climbing up over closing the horizontal gap.
-    // A flat "head straight at the entrance" vector gives a tiny y-component
-    // for any worker more than a couple of tiles wide of the shaft, so
-    // they end up pressed against tunnel ceilings/floors instead of
-    // actually rising out. Re-weighting the vector heavily toward "up"
-    // (with only a moderate horizontal lean toward the entrance) makes
-    // them genuinely climb; the slide-and-auto-climb in movement.rs lets
-    // the tunnel structure funnel them out the rest of the way.
+    // Flow-field hit — take the precomputed shortest-path step toward
+    // the entrance. Robust to arbitrarily winding tunnels because the
+    // BFS routes through whatever passable network actually exists.
+    if dx != 0 || dy != 0 {
+        let mag = ((dx * dx + dy * dy) as f32).sqrt().max(0.01);
+        vel.0.x = dx as f32 / mag * ANT_SPEED;
+        vel.0.y = dy as f32 / mag * ANT_SPEED;
+        return;
+    }
+
+    // Fallback for tiles outside the field (unreachable from the
+    // entrance, or the entrance tile itself). Direct steering with an
+    // upward bias underground — the field gets rebuilt every couple of
+    // seconds, so this only matters for an ant standing on a freshly-
+    // dug tile in the gap before the next rebuild.
+    let target_dx = COLONY_X as f32 + 0.5 - pos.0.x;
+    let target_dy = COLONY_Y as f32 + 0.5 - pos.0.y;
     let (vx, vy) = if pos.0.y > SURFACE_ROW as f32 + 1.0 {
-        let hx = if dx.abs() > 0.5 { dx.signum() * 0.5 } else { 0.0 };
-        let mag = (hx*hx + 1.0).sqrt();
+        let hx = if target_dx.abs() > 0.5 { target_dx.signum() * 0.5 } else { 0.0 };
+        let mag = (hx * hx + 1.0).sqrt();
         (hx / mag * ANT_SPEED, -1.0 / mag * ANT_SPEED)
     } else {
-        let d = (dx*dx + dy*dy).sqrt().max(0.01);
-        (dx / d * ANT_SPEED, dy / d * ANT_SPEED)
+        let d = (target_dx * target_dx + target_dy * target_dy).sqrt().max(0.01);
+        (target_dx / d * ANT_SPEED, target_dy / d * ANT_SPEED)
     };
     vel.0.x = vx;
     vel.0.y = vy;
@@ -373,6 +384,7 @@ fn step_deposit_debris(
     brain: &mut WorkerBrain,
     cargo: &mut Cargo,
     grid:  &TileGrid,
+    field: &ReturnFlowField,
     rng:   &mut StdRng,
 ) {
     if cargo.debris.is_none() {
@@ -383,11 +395,12 @@ fn step_deposit_debris(
     }
     let Some(t) = cargo.debris else { return; };
 
-    // (1) Underground? Climb back to the entrance.
+    // (1) Underground? Climb back to the entrance via the flow field.
     if (pos.0.y as i32) > SURFACE_ROW {
-        step_return(pos, vel, grid);
+        step_return(pos, vel, field);
         brain.haul_direction   = 0;
         brain.haul_target_dist = 0;
+        let _ = grid;  // unused in this branch
         return;
     }
 

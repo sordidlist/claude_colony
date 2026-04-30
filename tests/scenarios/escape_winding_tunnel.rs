@@ -31,6 +31,7 @@ fn worker_climbs_out_of_winding_tunnel() {
      .carve_horizontal(final_x, mid_x,   bend2_y, 2)
      .fill_rect(final_x - 3, final_y - 1, final_x + 1, final_y + 1, TileType::Chamber)
      .mark_dirty()
+     .rebuild_flow_field()
      .reveal_all();
 
     let worker = s.spawn_worker(final_x - 1, final_y, Some(TileType::Soil));

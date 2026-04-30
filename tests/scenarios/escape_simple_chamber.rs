@@ -22,6 +22,7 @@ fn worker_climbs_out_of_simple_chamber() {
     s.fill_rect(chamber_x0, chamber_y0, chamber_x1, chamber_y1, TileType::Tunnel)
      .carve_vertical(COLONY_X, COLONY_Y, chamber_y0, 1)
      .mark_dirty()
+     .rebuild_flow_field()
      .reveal_all();
 
     // Worker stands on the chamber floor, carrying a soil pebble.
