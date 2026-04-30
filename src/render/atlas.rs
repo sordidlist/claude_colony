@@ -444,16 +444,19 @@ fn paint_barn_hi(img: &mut Image) {
     plot(img, 80, 2, brass_dk);
 
     // ── Gambrel roof ───────────────────────────────────────────────
-    // FLAT ridge at the top (16 wide) running under the cupola, then
-    // two-segment gambrel: steep upper, shallow lower with a sharp
-    // knee. The flat ridge is what stops it reading as a church spire.
+    // Real American barns have a *dramatic* contrast between the two
+    // pitches: upper near-vertical (~70° from horizontal), lower
+    // near-horizontal (~22°). Anything subtler and the bend disappears
+    // and the roof reads as a single triangle. Knee placed at ~1/3
+    // down from the top so the iconic long shallow lower pitch
+    // dominates the silhouette.
     let ridge_y  = 11i32;          // flat ridge band (2 rows)
     let peak_y   = 13i32;          // first sloping row
-    let knee_y   = 24i32;          // bend
+    let knee_y   = 23i32;          // bend at ~1/3 down
     let eaves_y  = 44i32;
-    let upper_w  = 16i32;          // half-width at top of slopes
-    let knee_w   = 28i32;
-    let eaves_w  = 70i32;
+    let upper_w  = 14i32;          // half-width at top of slopes
+    let knee_w   = 18i32;          // very small expansion in upper (steep)
+    let eaves_w  = 70i32;          // big expansion in lower (shallow)
     let centre_x = 72i32;
 
     // Flat ridge cap (rows 11-12), wider than the cupola so it
