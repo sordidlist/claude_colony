@@ -22,11 +22,18 @@ pub fn spider_tick(
     let mut rng = StdRng::seed_from_u64(
         (time.total * 1000.0) as u64 ^ 0xA37D_891B_2467_5C13);
     for (pos, mut vel, mut s, mut vis) in q.iter_mut() {
+        // Spiders belong in the deep tunnels, not at the colony entrance.
+        // If random wander has drifted one up too high, force a downward
+        // heading until it's back below the colony depth — fixes the
+        // "spider gets wedged in the entrance shaft" problem.
+        if pos.0.y < (SURFACE_ROW + 6) as f32 {
+            vel.0.x = rng.gen_range(-1.0..1.0) * SPIDER_SPEED * 0.4;
+            vel.0.y = SPIDER_SPEED;
+            s.heading_timer = 0.8;
+            continue;
+        }
         s.heading_timer -= time.dt;
         if s.heading_timer <= 0.0 {
-            // Shorter heading durations + much lower pause probability.
-            // The previous 40%-pause / 2-5s cycle left clusters of spiders
-            // standing still on top of one another in deep chambers.
             s.heading_timer = rng.gen_range(1.2..2.6);
             if rng.gen::<f32>() < 0.10 {
                 vel.0.x = 0.0; vel.0.y = 0.0;

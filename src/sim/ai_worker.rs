@@ -452,12 +452,18 @@ fn step_deposit_debris(
     let dir = brain.haul_direction as i32;
 
     // (4) Far enough from the entrance? Drop the pebble in the air tile
-    // immediately ahead at the ant's current y. Settling physics will
-    // slump it into the hill shape on its own.
+    // immediately ahead at the ant's current y. The drop column itself
+    // is also gated to be ≥ 3 tiles from the entrance — without this
+    // the entrance corridor sealed itself off as drops accumulated next
+    // to it and settling slid more soil into the same area.
     if dx_from_entrance >= brain.haul_target_dist as i32 {
         let nx = pos.0.x as i32 + dir;
         let ny = pos.0.y as i32;
-        if ny >= 1 && ny < SURFACE_ROW && grid.get(nx, ny) == TileType::Air {
+        let safe_distance = (nx - COLONY_X).abs() >= 3;
+        if safe_distance
+            && ny >= 1 && ny < SURFACE_ROW
+            && grid.get(nx, ny) == TileType::Air
+        {
             PENDING_TILE_OPS.with(|c| c.borrow_mut().push((nx, ny, t)));
             PENDING_DROP_EVENTS.with(|c| *c.borrow_mut() += 1);
             cargo.debris = None;
