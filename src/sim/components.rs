@@ -67,6 +67,13 @@ pub struct WorkerBrain {
     /// the population is what spreads drops out into a real mound shape
     /// rather than concentrating them on the first column past the corridor.
     pub haul_target_dist: i8,
+    /// Wall-clock seconds the ant has been carrying dirt without making
+    /// horizontal progress. Used so a stuck hauler tries the other
+    /// direction (and ultimately drops *somewhere*) rather than walking
+    /// into a wall forever.
+    pub haul_stuck_time: f32,
+    /// Last x position checked for progress, used to detect "stuck."
+    pub haul_last_x:     i16,
     pub attack_target:  Option<Entity>,
 }
 
@@ -83,6 +90,8 @@ impl Default for WorkerBrain {
             dig_phase: DigPhase::Approach,
             haul_direction: 0,
             haul_target_dist: 0,
+            haul_stuck_time: 0.0,
+            haul_last_x:     0,
             attack_target: None,
         }
     }

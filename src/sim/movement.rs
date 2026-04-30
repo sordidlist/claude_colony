@@ -49,10 +49,19 @@ pub fn integrate_movement(
             p.0.y = ny;
             v.0.x = 0.0;
         } else {
-            // Try climbing one tile up.
-            let up_x = nx as i32;
-            let up_y = (p.0.y - 1.0) as i32;
-            if up_y >= 0 && grid.passable(up_x, up_y) {
+            // Two-step auto-climb: only valid if the *path* (up, then over)
+            // is clear. Without checking the tile directly above the
+            // entity, the climb would pop entities straight through any
+            // 1-tile wall whose far side happens to be air above. That's
+            // how spiders ended up wedged inside the colony entrance and
+            // ants ended up sealed inside solid rock pockets.
+            let up_x   = nx as i32;
+            let up_y   = (p.0.y - 1.0) as i32;
+            let stay_x = p.0.x as i32;
+            if up_y >= 0
+                && grid.passable(stay_x, up_y)
+                && grid.passable(up_x,   up_y)
+            {
                 p.0.x = nx;
                 p.0.y = up_y as f32 + 0.5;
                 v.0.y = 0.0;

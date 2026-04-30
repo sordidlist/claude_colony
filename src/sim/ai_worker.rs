@@ -391,6 +391,7 @@ fn step_deposit_debris(
         brain.mode = WorkerMode::Wander;
         brain.haul_direction   = 0;
         brain.haul_target_dist = 0;
+        brain.haul_stuck_time  = 0.0;
         return;
     }
     let Some(t) = cargo.debris else { return; };
@@ -400,7 +401,8 @@ fn step_deposit_debris(
         step_return(pos, vel, field);
         brain.haul_direction   = 0;
         brain.haul_target_dist = 0;
-        let _ = grid;  // unused in this branch
+        brain.haul_stuck_time  = 0.0;
+        let _ = grid;
         return;
     }
 
@@ -410,13 +412,48 @@ fn step_deposit_debris(
         let prefer = if from_dx >= 0.0 { 1 } else { -1 };
         brain.haul_direction = if rng.gen::<f32>() < 0.3 { -prefer } else { prefer };
         brain.haul_target_dist = rng.gen_range(4i8..15);
+        brain.haul_last_x = pos.0.x as i16;
+        brain.haul_stuck_time = 0.0;
     }
-    let dir = brain.haul_direction as i32;
+
+    // Surface-snap up to the column's walkable top — also fires when
+    // the ant is on the grass row itself (pos.y ~ 28.5), which is what
+    // happens right as they emerge from the entrance shaft. Without
+    // this, ants on grass never reach the air-above-grass band where
+    // the drop tile sits, and they pile up at the entrance with cargo.
+    let tx_now = pos.0.x as i32;
+    if tx_now > 0 && tx_now < grid.width - 1 {
+        let target_y = worker_surface_y(grid, tx_now) as f32 + 0.5;
+        if target_y < pos.0.y {
+            pos.0.y = target_y;
+        }
+    }
+
+    let dir_initial = brain.haul_direction as i32;
     let dx_from_entrance = (pos.0.x as i32 - COLONY_X).abs();
 
-    // (3) Far enough from the entrance? Drop the pebble in the air tile
-    // immediately ahead — settling physics will slump it into the hill
-    // shape on its own.
+    // (3) Stuck detection. If horizontal progress has stalled for a
+    // couple of seconds, flip the haul direction — the ant has hit
+    // something solid (a pile shoulder, a tree trunk, the world edge)
+    // and needs to try the other side. This is what makes haulers
+    // *endeavour* to deposit outside instead of giving up: they keep
+    // pushing toward open ground until they find a drop spot.
+    let cur_x_i = pos.0.x as i16;
+    if (cur_x_i - brain.haul_last_x).abs() < 1 {
+        brain.haul_stuck_time += 1.0 / 60.0;
+        if brain.haul_stuck_time > 1.5 {
+            brain.haul_direction = -brain.haul_direction;
+            brain.haul_stuck_time = 0.0;
+        }
+    } else {
+        brain.haul_stuck_time = 0.0;
+        brain.haul_last_x = cur_x_i;
+    }
+    let dir = brain.haul_direction as i32;
+
+    // (4) Far enough from the entrance? Drop the pebble in the air tile
+    // immediately ahead at the ant's current y. Settling physics will
+    // slump it into the hill shape on its own.
     if dx_from_entrance >= brain.haul_target_dist as i32 {
         let nx = pos.0.x as i32 + dir;
         let ny = pos.0.y as i32;
@@ -426,24 +463,16 @@ fn step_deposit_debris(
             cargo.debris = None;
             brain.haul_direction   = 0;
             brain.haul_target_dist = 0;
+            brain.haul_stuck_time  = 0.0;
             brain.mode = WorkerMode::Wander;
             return;
         }
     }
 
-    // (4) Walk outward; snap *up only* to the column's surface so we
-    // climb over the shoulders of an existing pile.
+    // (5) Walk outward.
     vel.0.x = dir as f32 * ANT_SPEED;
     vel.0.y = 0.0;
-    if pos.0.y < SURFACE_ROW as f32 {
-        let tx = pos.0.x as i32;
-        if tx > 0 && tx < grid.width - 1 {
-            let target_y = worker_surface_y(grid, tx) as f32 + 0.5;
-            if target_y < pos.0.y {
-                pos.0.y = target_y;
-            }
-        }
-    }
+    let _ = dir_initial;
 }
 
 /// The y of the topmost air tile in column `x` whose tile-below is solid
