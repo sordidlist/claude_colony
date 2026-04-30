@@ -24,13 +24,29 @@ pub fn hostile_alarm_emission(
     spiders:   Query<&Position, With<Spider>>,
     rivals:    Query<&Position, With<RivalAnt>>,
 ) {
+    // Spread the alarm into a 3×3 area around each hostile so workers
+    // 1-2 tiles away are pulled in too, not just ones standing on the
+    // spider's exact tile. This is the propagation that turns a 1v1
+    // skirmish into the swarm response.
     for pos in spiders.iter() {
-        phero.deposit(pos.0.x as i32, pos.0.y as i32,
-                      PheromoneChannel::Alarm, 70.0);
+        let tx = pos.0.x as i32;
+        let ty = pos.0.y as i32;
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                phero.deposit(tx + dx, ty + dy,
+                              PheromoneChannel::Alarm, 50.0);
+            }
+        }
     }
     for pos in rivals.iter() {
-        phero.deposit(pos.0.x as i32, pos.0.y as i32,
-                      PheromoneChannel::Alarm, 55.0);
+        let tx = pos.0.x as i32;
+        let ty = pos.0.y as i32;
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                phero.deposit(tx + dx, ty + dy,
+                              PheromoneChannel::Alarm, 40.0);
+            }
+        }
     }
 }
 

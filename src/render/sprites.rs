@@ -15,6 +15,32 @@ pub fn draw_sprites(
     let (x0, y0, x1, y1) = cam.visible_tile_rect();
     let shadow = Color::new(0.0, 0.0, 0.0, 0.32);
 
+    // Queen royal-glow halo — drawn FIRST so it sits behind every other
+    // sprite. Pulses in size and alpha on a slow ~2 Hz cycle, in deep
+    // royal purple. Helps the player locate the queen anywhere in the
+    // tunnel network even when the camera is elsewhere or fog covers
+    // her chamber.
+    let total = world.resource::<colony::sim::Time>().total;
+    let mut qglow = world.query::<(&Position, &Ant)>();
+    for (p, a) in qglow.iter(world) {
+        if !matches!(a.kind, AntKind::Queen) { continue; }
+        let tx = p.0.x as i32;
+        let ty = p.0.y as i32;
+        if tx < x0 - 5 || tx > x1 + 5 || ty < y0 - 5 || ty > y1 + 5 { continue; }
+        let phase = (total * 2.0).sin() * 0.5 + 0.5;        // 0..1
+        let radius_tiles = 2.5 + phase * 1.0;                // 2.5..3.5
+        let (sx, sy) = cam.world_to_screen(p.0.x, p.0.y);
+        // Outer soft halo
+        draw_circle(sx, sy, radius_tiles * cam.zoom,
+            Color::new(0.55, 0.18, 0.78, 0.18 + phase * 0.10));
+        // Inner brighter ring
+        draw_circle(sx, sy, (radius_tiles - 0.8) * cam.zoom,
+            Color::new(0.78, 0.36, 0.94, 0.22 + phase * 0.14));
+        // Tight bright core
+        draw_circle(sx, sy, (radius_tiles - 1.6) * cam.zoom,
+            Color::new(0.96, 0.66, 1.0,  0.20 + phase * 0.10));
+    }
+
     // Workers + queen + soldiers
     let mut q = world.query::<(&Position, &VisualState, &Cargo, &Ant)>();
     for (p, v, c, a) in q.iter(world) {

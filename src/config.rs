@@ -63,7 +63,7 @@ pub const FOOD_PHEROMONE_BURST:  f32 = 220.0;
 // Combat
 pub const ATTACK_DAMAGE_RADIUS_TILES: f32 = 1.6;
 pub const ALARM_PHEROMONE_BURST:      f32 = 240.0;
-pub const ALARM_TRIGGER_LEVEL:        f32 = 30.0;
+pub const ALARM_TRIGGER_LEVEL:        f32 = 12.0;
 pub const CORPSE_DECAY_S:             f32 = 80.0;
 
 // Soldier patrol

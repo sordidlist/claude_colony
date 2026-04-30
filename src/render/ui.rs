@@ -54,6 +54,8 @@ pub fn draw_bottom_stats(pop: &Population, jobs: &DigJobs, tod: &TimeOfDay,
         *x += lw + vw + 26.0;
     };
 
+    put("Queen ",    &format!("{}", pop.queens),   &mut x,
+        if pop.queens > 0 { hi } else { danger });
     put("Workers ",  &format!("{}", pop.workers),  &mut x, hi);
     put("Soldiers ", &format!("{}", pop.soldiers), &mut x, hi);
     put("Brood ",    &format!("{}", pop.brood),    &mut x, fg);

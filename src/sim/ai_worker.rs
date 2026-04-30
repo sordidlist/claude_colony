@@ -101,15 +101,21 @@ fn choose_mode(
 
     // Highest-priority overrides first. These can interrupt a dig.
     // Top priority: alarm pheromone in the local area means a fight is
-    // happening nearby — drop everything and rush in.
+    // happening nearby — drop everything and rush in. *Including*
+    // haulers and food carriers: under attack, the colony wants every
+    // available worker, not just the unencumbered ones. Workers in
+    // Dig mode also abandon their claim. The dropped cargo is the
+    // cost of the swarm response.
     let alarm_here = phero.level(tx, ty, PheromoneChannel::Alarm);
     let alarm_neighbour = phero
         .strongest_neighbour(tx, ty, PheromoneChannel::Alarm, ALARM_TRIGGER_LEVEL)
         .is_some();
-    if (alarm_here > ALARM_TRIGGER_LEVEL || alarm_neighbour)
-        && cargo.amount == 0 && cargo.debris.is_none()
-    {
+    if alarm_here > ALARM_TRIGGER_LEVEL || alarm_neighbour {
         release_dig(brain, jobs);
+        cargo.debris = None;     // drop dirt to fight
+        cargo.amount = 0;        // drop food to fight
+        brain.haul_direction = 0;
+        brain.haul_target_dist = 0;
         brain.mode = WorkerMode::FightBack;
         return;
     }
@@ -238,14 +244,21 @@ fn step_fight_back(
 ) {
     let tx = pos.0.x as i32;
     let ty = pos.0.y as i32;
+    let here = phero.level(tx, ty, PheromoneChannel::Alarm);
     if let Some((dx, dy)) = phero.strongest_neighbour(tx, ty,
-        PheromoneChannel::Alarm, 1.0)
+        PheromoneChannel::Alarm, here.max(1.0))
     {
         let mag = ((dx*dx + dy*dy) as f32).sqrt().max(0.01);
         vel.0.x = dx as f32 / mag * ANT_SPEED;
         vel.0.y = dy as f32 / mag * ANT_SPEED;
+    } else if here > 1.0 {
+        // We're at the alarm peak — the hostile is right here. Stand
+        // ground so combat_step can land hits, instead of random-walking
+        // away from the very target we're meant to engage.
+        vel.0.x = 0.0;
+        vel.0.y = 0.0;
     } else {
-        // Lost the gradient — wander aggressively until alarm re-asserts.
+        // No alarm anywhere — wander until something re-triggers.
         vel.0.x = rng.gen_range(-ANT_SPEED..ANT_SPEED);
         vel.0.y = rng.gen_range(-ANT_SPEED..ANT_SPEED);
     }

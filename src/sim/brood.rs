@@ -38,7 +38,7 @@ pub fn mature_brood(
                 FactionTag(Faction::Colony),
                 Ant { kind: AntKind::Worker },
                 Cargo::default(),
-                Attacker::new(1.5, 1.4, 0.9),
+                Attacker::new(2.2, 1.4, 0.7),
                 WorkerBrain::default(),
                 VisualState::default(),
             ));
