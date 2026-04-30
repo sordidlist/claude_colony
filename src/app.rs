@@ -140,7 +140,9 @@ fn spawn_spiders(world: &mut World, seed: u64) {
     let candidates = {
         let g = world.resource::<TileGrid>();
         let mut v = Vec::new();
-        for y in (SURFACE_ROW + 15)..g.height - 1 {
+        // Spawn spiders well below the colony's natural depth so they
+        // don't immediately drift up to the surface via random wander.
+        for y in (SURFACE_ROW + 35)..g.height - 1 {
             for x in 2..g.width - 2 {
                 if g.passable(x, y) && g.get(x, y + 1).solid() {
                     v.push((x, y));

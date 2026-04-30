@@ -18,15 +18,38 @@ pub fn integrate_movement(
     time: Res<super::Time>,
     mut q: Query<(&mut Position, &mut Velocity)>,
 ) {
-    let dt = time.dt;
+    let raw_dt = time.dt;
+    if raw_dt <= 0.0 { return; }
+
+    // Sub-step internally so each physics step uses a small dt regardless
+    // of the outer fast-forward multiplier. At 100× the outer dt is
+    // ~0.16s, which means entities moving at 6 t/s travel ~1 tile per
+    // step and gravity adds nearly 2 to v.y per step — slide collision
+    // can't see the diagonals between source and destination, and
+    // entities teleport through wall corners (which is how spiders end
+    // up wedged in the entrance shaft only at high speeds). Capping
+    // each sub-step at 0.05s keeps every move ≤ 0.3 tiles, which slide
+    // can resolve correctly.
+    let max_sub_dt = 0.05_f32;
+    let sub_steps  = (raw_dt / max_sub_dt).ceil().max(1.0) as i32;
+    let dt = raw_dt / sub_steps as f32;
+
     for (mut p, mut v) in q.iter_mut() {
+        for _ in 0..sub_steps {
+            integrate_one(&grid, &mut p, &mut v, dt);
+        }
+    }
+}
+
+fn integrate_one(
+    grid: &TileGrid,
+    p:    &mut Position,
+    v:    &mut Velocity,
+    dt:   f32,
+) {
         let tx = p.0.x as i32;
         let ty = p.0.y as i32;
-        // Only gate gravity. Don't zero an existing y velocity here — that
-        // would also kill AI-driven downward motion (e.g. an ant deliberately
-        // descending a vertical shaft). The slide-collision logic below
-        // handles cleanup when an ant actually hits something.
-        if !surface_anchor(&grid, tx, ty) {
+        if !surface_anchor(grid, tx, ty) {
             v.0.y += GRAVITY * dt;
             if v.0.y > TERMINAL_FALL { v.0.y = TERMINAL_FALL; }
         }
@@ -75,7 +98,6 @@ pub fn integrate_movement(
         if p.0.y < 0.5 { p.0.y = 0.5; }
         if p.0.x > grid.width  as f32 - 1.5 { p.0.x = grid.width  as f32 - 1.5; }
         if p.0.y > grid.height as f32 - 1.5 { p.0.y = grid.height as f32 - 1.5; }
-    }
 }
 
 /// "Is this ant clinging to terrain?" — generous so ants only fall when

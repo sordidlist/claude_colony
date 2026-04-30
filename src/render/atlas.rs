@@ -336,12 +336,14 @@ fn paint_barn_hi(img: &mut Image) {
         }
     };
 
-    let shingle_dark = rgb(36, 12, 10);
-    let shingle_dk   = rgb(64, 22, 18);
-    let shingle_mid  = rgb(108, 40, 30);
-    let shingle_mid2 = rgb(140, 56, 40);
-    let shingle_hi   = rgb(184, 96, 72);
-    let shingle_aged = rgb(96, 68, 48);
+    // Weathered wood-shingle gray — every reference photo of an
+    // American barn has the roof in this palette, never barn-red.
+    let shingle_dark = rgb(40, 36, 32);
+    let shingle_dk   = rgb(72, 68, 60);
+    let shingle_mid  = rgb(108, 100, 88);
+    let shingle_mid2 = rgb(140, 132, 116);
+    let shingle_hi   = rgb(176, 168, 148);
+    let shingle_aged = rgb(96, 80, 56);
     let trim_mid     = rgb(216, 200, 156);
     let trim_dk      = rgb(160, 144, 104);
     let trim_shadow  = rgb(96, 84, 60);
@@ -448,13 +450,16 @@ fn paint_barn_hi(img: &mut Image) {
     // horizontal, with a hard trim line at the knee so the bend reads
     // unmistakably. Anything less extreme and the roof reads as a
     // single straight pitch.
-    let ridge_y  = 11i32;          // flat ridge band (2 rows)
+    // Tuned to match the reference-photo gambrel: upper pitch ~55-60°
+    // from horizontal, lower pitch ~25-30°. Going more extreme than
+    // this read as "siloey" rather than "barny."
+    let ridge_y  = 11i32;
     let peak_y   = 13i32;
-    let knee_y   = 26i32;          // ~1/3 down from peak; matches real-barn proportions
+    let knee_y   = 26i32;
     let eaves_y  = 44i32;
-    let upper_w  = 12i32;
-    let knee_w   = 14i32;          // ~zero widening — upper is essentially a vertical box
-    let eaves_w  = 72i32;          // huge widening below — lower is the long shallow flare
+    let upper_w  = 14i32;
+    let knee_w   = 22i32;          // moderate widening — upper pitch ~60° from horizontal
+    let eaves_w  = 64i32;          // big widening below — lower pitch ~25° from horizontal
     let centre_x = 72i32;
 
     // Flat ridge cap (rows 11-12), wider than the cupola so it
@@ -648,26 +653,44 @@ fn paint_barn_hi(img: &mut Image) {
         plot(img, split,     y, door_dk);
         plot(img, split + 1, y, door_dk);
     }
-    // Two horizontal iron straps per leaf — top + bottom of door, the
-    // structural look of a real barn door (not the X-brace which read
-    // as church-y).
-    for &hy in &[dt + 2, db - 2] {
-        for x in dl..=split - 1 {
-            plot(img, x, hy,     iron_dk);
-            plot(img, x, hy + 1, iron_mid);
+    // White X-trim on each door leaf — the iconic barn-door visual
+    // from the reference photo. Each X spans corner-to-corner of its
+    // leaf, in cream trim against the dark plank background.
+    let plot_thick_line = |img: &mut Image, x0: i32, y0: i32, x1: i32, y1: i32, c: Color| {
+        let steps = (x1 - x0).abs().max((y1 - y0).abs());
+        if steps == 0 { return; }
+        for i in 0..=steps {
+            let t = i as f32 / steps as f32;
+            let x = (x0 as f32 + (x1 - x0) as f32 * t).round() as i32;
+            let y = (y0 as f32 + (y1 - y0) as f32 * t).round() as i32;
+            for dx in -1..=0 {
+                plot(img, x + dx, y, c);
+            }
         }
-        for x in (split + 2)..=dr {
-            plot(img, x, hy,     iron_dk);
-            plot(img, x, hy + 1, iron_mid);
-        }
-        plot(img, dl, hy, iron_hi);
-        plot(img, dr, hy, iron_hi);
-        plot(img, split - 1, hy, iron_hi);
-        plot(img, split + 2, hy, iron_hi);
-        for x in (dl + 6 .. split - 1).step_by(8) { plot(img, x, hy, rivet); }
-        for x in ((split + 6) .. dr - 1).step_by(8) { plot(img, x, hy, rivet); }
+    };
+    // Left leaf X
+    plot_thick_line(img, dl + 1, dt + 1, split - 1, db - 1, trim_mid);
+    plot_thick_line(img, split - 1, dt + 1, dl + 1, db - 1, trim_mid);
+    // Right leaf X
+    plot_thick_line(img, split + 2, dt + 1, dr - 1, db - 1, trim_mid);
+    plot_thick_line(img, dr - 1, dt + 1, split + 2, db - 1, trim_mid);
+    // White trim border around each leaf
+    for x in dl..=split - 1 {
+        plot(img, x, dt, trim_mid);
+        plot(img, x, db, trim_mid);
     }
-    // Brass D-handles (vertical bars), one per leaf — sliding-door pull
+    for x in (split + 2)..=dr {
+        plot(img, x, dt, trim_mid);
+        plot(img, x, db, trim_mid);
+    }
+    for y in dt..=db {
+        plot(img, dl,        y, trim_mid);
+        plot(img, split - 1, y, trim_mid);
+        plot(img, split + 2, y, trim_mid);
+        plot(img, dr,        y, trim_mid);
+    }
+    // Brass D-handles, one per leaf — sliding-door pull, mounted on the
+    // outer edge of each leaf
     let handle_y_mid = (dt + db) / 2;
     for &hx in &[split - 6, split + 7] {
         for dy_ in -3..=3 {
@@ -679,6 +702,7 @@ fn paint_barn_hi(img: &mut Image) {
         plot(img, hx + 1, handle_y_mid + 3, brass_dk);
         plot(img, hx, handle_y_mid - 1, brass_hi);
     }
+    let _ = (rivet, iron_dk, iron_mid, iron_hi);
 
     // ── Two side windows ──────────────────────────────────────────
     for &xs in &[14i32, 110] {
