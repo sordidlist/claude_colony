@@ -323,8 +323,12 @@ fn paint_dig_marker(img: &mut Image, col: u16, row: u16) {
 // ── high-res scenery painters (1:1 source-to-screen at zoom 8) ──────────────
 
 fn paint_barn_hi(img: &mut Image) {
-    // 144×96 — six plank columns, framed windows, double doors, mortared
-    // stone foundation, weather-vaned shingled roof.
+    // 144×96 traditional gambrel-roofed American barn. The previous
+    // simple-triangle roof was reading as a church spire; replacing it
+    // with a two-pitch gambrel (steep upper, shallow lower with a knee)
+    // is the silhouette that says "barn" instantly. The X-braced double
+    // doors also got swapped for plank-and-strap sliding doors with a
+    // track header — the other big "barn vs. church" cue.
     let plot = |img: &mut Image, x: i32, y: i32, c: Color| {
         if x >= 0 && (x as u16) < BARN_W && y >= 0 && (y as u16) < BARN_H {
             img.set_pixel(BARN_X as u32 + x as u32,
@@ -338,7 +342,6 @@ fn paint_barn_hi(img: &mut Image) {
     let shingle_mid2 = rgb(140, 56, 40);
     let shingle_hi   = rgb(184, 96, 72);
     let shingle_aged = rgb(96, 68, 48);
-    let trim_hi      = rgb(252, 244, 212);
     let trim_mid     = rgb(216, 200, 156);
     let trim_dk      = rgb(160, 144, 104);
     let trim_shadow  = rgb(96, 84, 60);
@@ -353,7 +356,6 @@ fn paint_barn_hi(img: &mut Image) {
     let glass_dk     = rgb(28, 60, 116);
     let glass_mid    = rgb(72, 132, 200);
     let glass_hi     = rgb(184, 220, 240);
-    let glass_reflect = rgb(248, 248, 252);
     let door_dk      = rgb(28, 14, 6);
     let door_mid     = rgb(80, 48, 24);
     let door_hi      = rgb(124, 84, 48);
@@ -373,108 +375,112 @@ fn paint_barn_hi(img: &mut Image) {
     let mortar       = rgb(36, 32, 48);
     let moss         = rgb(72, 100, 40);
 
-    // ── Weathervane ─────────────────────────────────────────────────
-    // Iron post (rows 0-12, centred at x=71)
-    for y in 0..12 {
+    // ── Weathervane: classic rooster-and-arrow ────────────────────
+    // Compact iron post + brass arrow, sits low against the gambrel
+    // peak rather than reaching skyward like a steeple cross.
+    for y in 6..13 {
         plot(img, 71, y, iron_dk);
         plot(img, 72, y, iron_hi);
     }
-    plot(img, 70, 0, brass_dk);
-    plot(img, 73, 0, brass_dk);
-    plot(img, 71, 0, brass);
-    plot(img, 72, 0, brass);
-    // Horizontal arrow at row 4-5
-    for x in 56..72 {
-        plot(img, x, 4, brass_dk);
-        plot(img, x, 5, brass);
-    }
-    for x in 73..89 {
-        plot(img, x, 4, brass);
-        plot(img, x, 5, brass_dk);
-    }
-    plot(img, 55, 4, brass_dk); plot(img, 55, 5, brass_dk);
-    plot(img, 89, 4, brass_dk); plot(img, 89, 5, brass_dk);
+    // Brass cardinal points (small N/S markers near the post)
+    plot(img, 71, 5, brass);
+    plot(img, 72, 5, brass);
+    plot(img, 71, 4, brass_dk);
+    // Horizontal arrow at row 7-8
+    for x in 64..72 { plot(img, x, 7, brass_dk); plot(img, x, 8, brass); }
+    for x in 73..81 { plot(img, x, 7, brass);    plot(img, x, 8, brass_dk); }
+    plot(img, 63, 7, brass_dk); plot(img, 63, 8, brass_dk);
+    plot(img, 81, 7, brass_dk); plot(img, 81, 8, brass_dk);
+    // Pointed arrow tip (right side)
+    plot(img, 82, 7, brass_dk);
+    // Tail feather (left side)
+    plot(img, 62, 6, brass_dk);
+    plot(img, 62, 9, brass_dk);
 
-    // ── Roof ────────────────────────────────────────────────────────
-    let apex_y = 13i32;
+    // ── Gambrel roof ───────────────────────────────────────────────
+    // Two linear segments joined at the knee. Half-width of each row
+    // is interpolated within the upper-steep and lower-shallow
+    // segments — this gives the iconic barn silhouette.
+    let peak_y  = 13i32;
+    let knee_y  = 26i32;
     let eaves_y = 44i32;
-    for y in apex_y..=eaves_y {
-        let t = (y - apex_y) as f32 / (eaves_y - apex_y) as f32;
-        let half_w = (4.0 + 68.0 * t) as i32;
-        let l = 72 - half_w;
-        let r = 72 + half_w;
-        let shingle_row = (y - apex_y) / 3;
-        let shingle_y_in = (y - apex_y) % 3;
+    let upper_w = 6i32;
+    let knee_w  = 30i32;
+    let eaves_w = 70i32;
+    let centre_x = 72i32;
+
+    for y in peak_y..=eaves_y {
+        let half_w = if y <= knee_y {
+            let t = (y - peak_y) as f32 / (knee_y - peak_y) as f32;
+            (upper_w as f32 + (knee_w - upper_w) as f32 * t).round() as i32
+        } else {
+            let t = (y - knee_y) as f32 / (eaves_y - knee_y) as f32;
+            (knee_w as f32 + (eaves_w - knee_w) as f32 * t).round() as i32
+        };
+        let l = centre_x - half_w;
+        let r = centre_x + half_w;
+        let shingle_row  = (y - peak_y) / 3;
+        let shingle_y_in = (y - peak_y) % 3;
         let stagger = if shingle_row & 1 == 0 { 0 } else { 3 };
         for x in l..=r {
-            let on_edge = x == l || x == r || x == l + 1 || x == r - 1;
-            let shingle_x_in = ((x + stagger).rem_euclid(6)) as i32;
-            let shingle_idx = (x + stagger).div_euclid(6);
+            let on_edge   = x == l || x == r || x == l + 1 || x == r - 1;
+            let on_knee   = y == knee_y || y == knee_y + 1;
+            let shingle_x_in = (x + stagger).rem_euclid(6);
+            let shingle_idx  = (x + stagger).div_euclid(6);
             let aged = ((shingle_idx.wrapping_mul(13)
                        ^ shingle_row.wrapping_mul(31)) & 7) == 0;
-            let c = if on_edge {
-                shingle_dk
-            } else if shingle_y_in == 0 {
-                shingle_hi                          // top of shingle catches light
-            } else if shingle_y_in == 2 {
-                shingle_dark                        // gap below shingle
-            } else if shingle_x_in == 0 {
-                shingle_dark                        // gap between shingles
-            } else if aged {
-                shingle_aged
-            } else {
-                let h = ((shingle_idx * 7) ^ (shingle_row * 11)) & 3;
-                match h { 0 => shingle_mid2, 1 => shingle_mid, _ => shingle_mid }
-            };
+            let c = if on_edge          { shingle_dk }
+                    else if on_knee     { shingle_dark }       // visible bend line
+                    else if shingle_y_in == 0 { shingle_hi }
+                    else if shingle_y_in == 2 { shingle_dark }
+                    else if shingle_x_in == 0 { shingle_dark }
+                    else if aged              { shingle_aged }
+                    else {
+                        let h = ((shingle_idx * 7) ^ (shingle_row * 11)) & 3;
+                        match h { 0 => shingle_mid2, _ => shingle_mid }
+                    };
             plot(img, x, y, c);
         }
     }
     // Ridge highlight along the very peak
-    for x in 64..81 {
-        plot(img, x, apex_y, shingle_hi);
+    for x in (centre_x - upper_w)..=(centre_x + upper_w) {
+        plot(img, x, peak_y, shingle_hi);
     }
-    plot(img, 71, apex_y - 1, shingle_dk);
-    plot(img, 72, apex_y - 1, shingle_dk);
 
-    // ── Trim band ───────────────────────────────────────────────────
+    // ── Eave trim band ─────────────────────────────────────────────
     for x in 0..(BARN_W as i32) {
-        plot(img, x, 44, trim_dk);
-        plot(img, x, 45, trim_hi);
+        plot(img, x, 45, trim_dk);
         plot(img, x, 46, trim_mid);
-        plot(img, x, 47, trim_mid);
-        plot(img, x, 48, trim_dk);
-        plot(img, x, 49, trim_shadow);
-    }
-    // Decorative dentils
-    for x in (4..140).step_by(8) {
-        plot(img, x, 47, trim_hi);
-        plot(img, x + 1, 47, trim_hi);
-        plot(img, x, 46, trim_dk);
+        plot(img, x, 47, trim_dk);
+        plot(img, x, 48, plank_seam);                // hard shadow under eaves
+        plot(img, x, 49, plank_seam);
     }
 
-    // ── Walls ───────────────────────────────────────────────────────
-    let seams = [0i32, 24, 48, 72, 96, 120, 143];
-    for y in 50..80 {
-        for x in 0..(BARN_W as i32) {
-            let body = if y == 50 || y == 79 { plank_dk }
-                       else if y % 2 == 0    { plank_mid }
-                       else                  { plank_hi };
+    // ── Walls ──────────────────────────────────────────────────────
+    let wall_l = 4i32;
+    let wall_r = 139i32;
+    let wall_t = 50i32;
+    let wall_b = 79i32;
+    let seams = [wall_l, 28, 50, 72, 94, 116, wall_r];
+    for y in wall_t..=wall_b {
+        for x in wall_l..=wall_r {
+            let body = if y == wall_t || y == wall_b { plank_dk }
+                       else if y % 2 == 0           { plank_mid }
+                       else                         { plank_hi };
             plot(img, x, y, body);
         }
-        // Wood-grain horizontal flecks
-        for x in 1..(BARN_W as i32 - 1) {
+        for x in wall_l..=wall_r {
             if (x ^ y) & 7 == 0 {
                 plot(img, x, y, plank_grain);
             }
         }
     }
-    // Vertical plank seams
     for &x in &seams {
-        for y in 50..80 {
+        for y in wall_t..=wall_b {
             plot(img, x, y, plank_seam);
         }
     }
-    // Knots — hand-placed bumps in the wood
+    // Knots
     let knots = [
         (10i32, 56i32), (32, 65), (62, 53), (88, 70),
         (108, 60), (130, 73), (15, 71), (45, 60),
@@ -485,86 +491,77 @@ fn paint_barn_hi(img: &mut Image) {
         plot(img, kx + 1, ky,     knot_mid);
         plot(img, kx,     ky + 1, knot_mid);
         plot(img, kx + 1, ky + 1, knot_dk);
-        plot(img, kx - 1, ky,     plank_dk);
-        plot(img, kx + 2, ky,     plank_dk);
     }
-    // Vertical rain-streak weathering
-    for y in 52..78 { plot(img, 5,   y, weather); plot(img, 6,   y, plank_dk); }
-    for y in 54..76 { plot(img, 138, y, weather); plot(img, 139, y, plank_dk); }
-    for y in 55..72 { plot(img, 137, y, weather); }
+    // Vertical rain streaks
+    for y in 52..78 { plot(img, 7,   y, weather); plot(img, 8,   y, plank_dk); }
+    for y in 54..76 { plot(img, 135, y, weather); plot(img, 136, y, plank_dk); }
+    for y in 55..72 { plot(img, 134, y, weather); }
 
-    // ── Hayloft window (large, centre, rows 53-72) ──────────────────
-    let hwl = 60i32; let hwr = 84i32;
-    let hwt = 53i32; let hwb = 72i32;
-    // Frame
-    for x in hwl..=hwr {
-        plot(img, x, hwt, trim_dk);
-        plot(img, x, hwt + 1, trim_mid);
-        plot(img, x, hwb - 1, trim_shadow);
-        plot(img, x, hwb, trim_dk);
+    // ── Hayloft door (top of wall, just below eaves) ──────────────
+    // Small two-leaf loading door for hauling hay bales up. Smaller
+    // than the main door, no glass — barn lofts have a wood door.
+    let hl_l = 60i32; let hl_r = 84i32;
+    let hl_t = 50i32; let hl_b = 60i32;
+    // Lintel + frame
+    for x in (hl_l - 1)..=(hl_r + 1) { plot(img, x, hl_t, trim_dk); }
+    for y in hl_t..=hl_b {
+        plot(img, hl_l - 1, y, trim_dk);
+        plot(img, hl_r + 1, y, trim_dk);
     }
-    for y in hwt..=hwb {
-        plot(img, hwl,     y, trim_dk);
-        plot(img, hwl + 1, y, trim_mid);
-        plot(img, hwr - 1, y, trim_shadow);
-        plot(img, hwr,     y, trim_dk);
-    }
-    // Glass + mullions (4×3 panes)
-    for y in (hwt + 2)..(hwb - 1) {
-        for x in (hwl + 2)..(hwr - 1) {
-            let lx = x - hwl - 2;  // 0..21
-            let ly = y - hwt - 2;  // 0..16
-            let pane_w = 5;
-            let pane_h = 5;
-            let on_v = (lx + 1) % pane_w == 0 && lx + 1 < pane_w * 4;
-            let on_h = (ly + 1) % pane_h == 0 && ly + 1 < pane_h * 3;
-            let c = if on_v || on_h { trim_mid }
-                    else if ly < 4 && lx > 12 { glass_hi }
-                    else if ly < 7 { glass_mid }
-                    else { glass_dk };
-            plot(img, x, y, c);
-        }
-    }
-    plot(img, hwr - 4, hwt + 3, glass_reflect);
-    plot(img, hwr - 5, hwt + 4, glass_reflect);
-
-    // ── Two side windows ────────────────────────────────────────────
-    for &xs in &[12i32, 108] {
-        let xe = xs + 18;
-        let yt = 58i32; let yb = 73i32;
-        for x in xs..=xe { plot(img, x, yt, trim_dk); plot(img, x, yb, trim_dk); }
-        for y in yt..=yb { plot(img, xs, y, trim_dk); plot(img, xe, y, trim_dk); }
-        for y in (yt + 1)..yb {
-            for x in (xs + 1)..xe {
-                let lx = x - xs - 1;
-                let ly = y - yt - 1;
-                let on_v = (lx + 1) % 6 == 0 && lx + 1 < 18;
-                let on_h = (ly + 1) % 7 == 0 && ly + 1 < 14;
-                let c = if on_v || on_h { trim_mid }
-                        else if ly < 3 && lx < 4 { glass_hi }
-                        else if ly < 6 { glass_mid }
-                        else { glass_dk };
-                plot(img, x, y, c);
-            }
-        }
-        // Sill
-        for x in (xs - 1)..=(xe + 1) {
-            plot(img, x, yb + 1, trim_shadow);
-        }
-        plot(img, xs - 2, yb + 1, trim_dk);
-        plot(img, xe + 2, yb + 1, trim_dk);
-    }
-
-    // ── Double doors ────────────────────────────────────────────────
-    let dl = 54i32; let dr = 90i32;
-    let dt = 56i32; let db = 79i32;
-    for y in dt..=db {
-        for x in dl..=dr {
-            let plank_in = ((x - dl) % 4 + 4) % 4;
+    for y in (hl_t + 1)..=hl_b {
+        for x in hl_l..=hl_r {
+            let plank_in = ((x - hl_l) % 4 + 4) % 4;
             let body = if plank_in == 0 { door_dk }
                        else if plank_in == 1 { door_mid }
                        else if plank_in == 2 { door_hi }
                        else { door_mid };
+            plot(img, x, y, body);
+        }
+    }
+    // Iron straps top + bottom
+    for &hy in &[hl_t + 1, hl_b - 1] {
+        for x in hl_l..=hl_r { plot(img, x, hy, iron_dk); }
+    }
+    plot(img, hl_l, hl_t + 1, iron_hi);
+    plot(img, hl_r, hl_t + 1, iron_hi);
+    plot(img, hl_l, hl_b - 1, iron_hi);
+    plot(img, hl_r, hl_b - 1, iron_hi);
+    // Centre split
+    let hl_split = (hl_l + hl_r) / 2;
+    for y in (hl_t + 1)..=hl_b { plot(img, hl_split, y, door_dk); }
+    // Pulley hook above the hayloft door — for raising bales
+    for y in 47..50 { plot(img, 71, y, iron_dk); plot(img, 72, y, iron_dk); }
+    plot(img, 70, 49, iron_dk);
+    plot(img, 73, 49, iron_dk);
+
+    // ── Big main barn door (sliding two-leaf, takes most of bottom wall) ──
+    let dl = 38i32; let dr = 105i32;
+    let dt = 62i32; let db = 79i32;
+
+    // Sliding-door track header — long iron bar above the door with
+    // brass track wheels on each leaf. THE single biggest "this is a
+    // working barn, not a chapel" visual cue.
+    for x in (dl - 4)..=(dr + 4) {
+        plot(img, x, dt - 2, iron_dk);
+        plot(img, x, dt - 1, iron_mid);
+    }
+    plot(img, dl - 5, dt - 2, iron_dk); plot(img, dr + 5, dt - 2, iron_dk);
+    plot(img, dl - 5, dt - 1, iron_mid); plot(img, dr + 5, dt - 1, iron_mid);
+    // Track wheels
+    for &wx in &[dl + 4, dr - 4] {
+        plot(img, wx, dt - 2, brass_dk);
+        plot(img, wx, dt - 1, brass);
+    }
+
+    // Door body — vertical planks
+    for y in dt..=db {
+        for x in dl..=dr {
+            let plank_in = ((x - dl) % 5 + 5) % 5;
+            let body = if plank_in == 0 { door_dk }
+                       else if plank_in == 1 { door_mid }
+                       else if plank_in == 2 { door_hi }
+                       else if plank_in == 3 { door_mid }
+                       else                  { door_grain };
             plot(img, x, y, body);
         }
         for x in dl..=dr {
@@ -573,14 +570,24 @@ fn paint_barn_hi(img: &mut Image) {
             }
         }
     }
-    // Centre split
+    // Door frame outline (sides + bottom; top is the track header)
+    for y in dt..=db {
+        plot(img, dl - 1, y, door_dk);
+        plot(img, dr + 1, y, door_dk);
+    }
+    for x in (dl - 1)..=(dr + 1) {
+        plot(img, x, db + 1, door_dk);
+    }
+    // Centre split for the two leaves
     let split = (dl + dr) / 2;
     for y in dt..=db {
         plot(img, split,     y, door_dk);
         plot(img, split + 1, y, door_dk);
     }
-    // Iron strap hinges (3 per leaf: top, middle, bottom)
-    for &hy in &[dt + 1, dt + 11, db - 1] {
+    // Two horizontal iron straps per leaf — top + bottom of door, the
+    // structural look of a real barn door (not the X-brace which read
+    // as church-y).
+    for &hy in &[dt + 2, db - 2] {
         for x in dl..=split - 1 {
             plot(img, x, hy,     iron_dk);
             plot(img, x, hy + 1, iron_mid);
@@ -589,45 +596,49 @@ fn paint_barn_hi(img: &mut Image) {
             plot(img, x, hy,     iron_dk);
             plot(img, x, hy + 1, iron_mid);
         }
-        // Hinge-end pivot bosses
-        plot(img, dl,        hy,     iron_hi);
-        plot(img, dr,        hy,     iron_hi);
-        plot(img, split - 1, hy,     iron_hi);
-        plot(img, split + 2, hy,     iron_hi);
-        // Rivets along the strap
-        for x in (dl + 6 .. split - 1).step_by(8) {
-            plot(img, x, hy, rivet);
-        }
-        for x in ((split + 6) .. dr - 1).step_by(8) {
-            plot(img, x, hy, rivet);
-        }
+        plot(img, dl, hy, iron_hi);
+        plot(img, dr, hy, iron_hi);
+        plot(img, split - 1, hy, iron_hi);
+        plot(img, split + 2, hy, iron_hi);
+        for x in (dl + 6 .. split - 1).step_by(8) { plot(img, x, hy, rivet); }
+        for x in ((split + 6) .. dr - 1).step_by(8) { plot(img, x, hy, rivet); }
     }
-    // Door frame outline
-    for y in (dt - 1)..=(db + 1) {
-        plot(img, dl - 1, y, door_dk);
-        plot(img, dr + 1, y, door_dk);
-    }
-    for x in (dl - 1)..=(dr + 1) {
-        plot(img, x, dt - 1, door_dk);
-        plot(img, x, db + 1, door_dk);
-    }
-    // Brass ring handles, one per leaf, mid-height
-    let handle_y = (dt + db) / 2;
-    for &hx in &[split - 5, split + 6] {
-        // Ring (6×6 disc minus centre)
-        for dy_ in -3..=3i32 {
-            for dx_ in -3..=3i32 {
-                let r2 = dx_ * dx_ + dy_ * dy_;
-                if r2 <= 9 && r2 >= 4 {
-                    plot(img, hx + dx_, handle_y + dy_, brass);
-                }
-            }
+    // Brass D-handles (vertical bars), one per leaf — sliding-door pull
+    let handle_y_mid = (dt + db) / 2;
+    for &hx in &[split - 6, split + 7] {
+        for dy_ in -3..=3 {
+            plot(img, hx, handle_y_mid + dy_, brass);
         }
-        plot(img, hx, handle_y, brass_dk);
-        plot(img, hx - 2, handle_y - 2, brass_hi);
+        plot(img, hx - 1, handle_y_mid - 3, brass_dk);
+        plot(img, hx + 1, handle_y_mid - 3, brass_dk);
+        plot(img, hx - 1, handle_y_mid + 3, brass_dk);
+        plot(img, hx + 1, handle_y_mid + 3, brass_dk);
+        plot(img, hx, handle_y_mid - 1, brass_hi);
     }
 
-    // ── Stone foundation ────────────────────────────────────────────
+    // ── Two side windows ──────────────────────────────────────────
+    for &xs in &[14i32, 110] {
+        let xe = xs + 14;
+        let yt = 55i32; let yb = 70i32;
+        for x in xs..=xe { plot(img, x, yt, trim_dk); plot(img, x, yb, trim_dk); }
+        for y in yt..=yb { plot(img, xs, y, trim_dk); plot(img, xe, y, trim_dk); }
+        for y in (yt + 1)..yb {
+            for x in (xs + 1)..xe {
+                let lx = x - xs - 1;
+                let ly = y - yt - 1;
+                let on_v = (lx + 1) % 6 == 0 && lx + 1 < 14;
+                let on_h = (ly + 1) % 7 == 0 && ly + 1 < 14;
+                let c = if on_v || on_h { trim_mid }
+                        else if ly < 3 && lx < 4 { glass_hi }
+                        else if ly < 6 { glass_mid }
+                        else { glass_dk };
+                plot(img, x, y, c);
+            }
+        }
+        for x in (xs - 1)..=(xe + 1) { plot(img, x, yb + 1, trim_shadow); }
+    }
+
+    // ── Stone foundation ──────────────────────────────────────────
     let course1: [(i32, i32); 9] = [
         (0, 14), (15, 30), (31, 47), (48, 65), (66, 79),
         (80, 96), (97, 112), (113, 128), (129, 143),
@@ -675,7 +686,6 @@ fn paint_barn_hi(img: &mut Image) {
             for y in 87..96 { plot(img, r + 1, y, mortar); }
         }
     }
-    // Moss tufts at top of foundation
     for x in (15..130).step_by(20) {
         plot(img, x,     80, moss);
         plot(img, x + 1, 80, moss);
