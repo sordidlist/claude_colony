@@ -375,39 +375,93 @@ fn paint_barn_hi(img: &mut Image) {
     let mortar       = rgb(36, 32, 48);
     let moss         = rgb(72, 100, 40);
 
-    // ── Weathervane: classic rooster-and-arrow ────────────────────
-    // Compact iron post + brass arrow, sits low against the gambrel
-    // peak rather than reaching skyward like a steeple cross.
-    for y in 6..13 {
-        plot(img, 71, y, iron_dk);
-        plot(img, 72, y, iron_hi);
+    // ── Cupola (the iconic barn ventilator tower on the peak) ─────
+    // This is the single most barn-recognisable feature — a small
+    // square tower with a louvered vent, its own little roof, and the
+    // weathervane on top. Churches don't have these; barns almost
+    // always do. The flat ridge of the gambrel sits beneath it.
+    let cup_l = 66i32;
+    let cup_r = 77i32;            // 12 wide
+    let cup_wall_top = 6i32;
+    let cup_wall_bot = 9i32;
+    let cup_base_y   = 10i32;
+    let cupola_white = rgb(232, 220, 188);
+    let cupola_shadow = rgb(168, 152, 116);
+    let louver_dk = rgb(28, 18, 10);
+    let louver_mid = rgb(64, 44, 24);
+
+    // Cupola pyramidal mini-roof (rows 3-5)
+    for y in 3..=5 {
+        let inset = 5 - y;            // 2 at top, 0 at bottom
+        for x in (cup_l + inset)..=(cup_r - inset) {
+            let c = if y == 5 { shingle_dark }
+                    else if y == 3 { shingle_dk }
+                    else { shingle_mid };
+            plot(img, x, y, c);
+        }
     }
-    // Brass cardinal points (small N/S markers near the post)
-    plot(img, 71, 5, brass);
-    plot(img, 72, 5, brass);
-    plot(img, 71, 4, brass_dk);
-    // Horizontal arrow at row 7-8
-    for x in 64..72 { plot(img, x, 7, brass_dk); plot(img, x, 8, brass); }
-    for x in 73..81 { plot(img, x, 7, brass);    plot(img, x, 8, brass_dk); }
-    plot(img, 63, 7, brass_dk); plot(img, 63, 8, brass_dk);
-    plot(img, 81, 7, brass_dk); plot(img, 81, 8, brass_dk);
-    // Pointed arrow tip (right side)
-    plot(img, 82, 7, brass_dk);
-    // Tail feather (left side)
-    plot(img, 62, 6, brass_dk);
-    plot(img, 62, 9, brass_dk);
+    // Cupola walls — white-painted siding
+    for y in cup_wall_top..=cup_wall_bot {
+        for x in cup_l..=cup_r {
+            let c = if y == cup_wall_bot { cupola_shadow }
+                    else { cupola_white };
+            plot(img, x, y, c);
+        }
+    }
+    // Louvered vent slats — the iconic horizontal bars on a barn cupola
+    for y in cup_wall_top..=cup_wall_bot {
+        if y % 2 == 0 {
+            for x in (cup_l + 2)..=(cup_r - 2) {
+                plot(img, x, y, louver_mid);
+            }
+            plot(img, cup_l + 2, y, louver_dk);
+            plot(img, cup_r - 2, y, louver_dk);
+        }
+    }
+    // Cupola base trim band
+    for x in (cup_l - 1)..=(cup_r + 1) {
+        plot(img, x, cup_base_y, trim_dk);
+    }
+
+    // ── Weathervane on top of the cupola ──────────────────────────
+    // Short post + arrow, mounted on the cupola peak — much shorter
+    // than the previous skyward post that was reading as a steeple.
+    plot(img, 71, 0, iron_dk);
+    plot(img, 72, 0, iron_hi);
+    plot(img, 71, 1, iron_dk);
+    plot(img, 72, 1, iron_hi);
+    plot(img, 71, 2, iron_dk);
+    plot(img, 72, 2, iron_hi);
+    // Compact arrow at row 1
+    for x in 66..72 { plot(img, x, 1, brass); }
+    for x in 73..79 { plot(img, x, 1, brass); }
+    plot(img, 65, 1, brass_dk);
+    plot(img, 79, 1, brass_dk);
+    // Tail/tip feathers
+    plot(img, 64, 0, brass_dk);
+    plot(img, 64, 2, brass_dk);
+    plot(img, 80, 0, brass_dk);
+    plot(img, 80, 2, brass_dk);
 
     // ── Gambrel roof ───────────────────────────────────────────────
-    // Two linear segments joined at the knee. Half-width of each row
-    // is interpolated within the upper-steep and lower-shallow
-    // segments — this gives the iconic barn silhouette.
-    let peak_y  = 13i32;
-    let knee_y  = 26i32;
-    let eaves_y = 44i32;
-    let upper_w = 6i32;
-    let knee_w  = 30i32;
-    let eaves_w = 70i32;
+    // FLAT ridge at the top (16 wide) running under the cupola, then
+    // two-segment gambrel: steep upper, shallow lower with a sharp
+    // knee. The flat ridge is what stops it reading as a church spire.
+    let ridge_y  = 11i32;          // flat ridge band (2 rows)
+    let peak_y   = 13i32;          // first sloping row
+    let knee_y   = 24i32;          // bend
+    let eaves_y  = 44i32;
+    let upper_w  = 16i32;          // half-width at top of slopes
+    let knee_w   = 28i32;
+    let eaves_w  = 70i32;
     let centre_x = 72i32;
+
+    // Flat ridge cap (rows 11-12), wider than the cupola so it
+    // overhangs visibly
+    for x in (centre_x - upper_w)..=(centre_x + upper_w) {
+        plot(img, x, ridge_y,     shingle_dk);
+        plot(img, x, ridge_y + 1, shingle_mid);
+    }
 
     for y in peak_y..=eaves_y {
         let half_w = if y <= knee_y {
@@ -423,14 +477,16 @@ fn paint_barn_hi(img: &mut Image) {
         let shingle_y_in = (y - peak_y) % 3;
         let stagger = if shingle_row & 1 == 0 { 0 } else { 3 };
         for x in l..=r {
-            let on_edge   = x == l || x == r || x == l + 1 || x == r - 1;
-            let on_knee   = y == knee_y || y == knee_y + 1;
+            let on_edge = x == l || x == r || x == l + 1 || x == r - 1;
+            // Mark the gambrel knee with a darker band so the bend reads
+            // clearly even at small visible sizes
+            let on_knee = y == knee_y || y == knee_y + 1;
             let shingle_x_in = (x + stagger).rem_euclid(6);
             let shingle_idx  = (x + stagger).div_euclid(6);
             let aged = ((shingle_idx.wrapping_mul(13)
                        ^ shingle_row.wrapping_mul(31)) & 7) == 0;
             let c = if on_edge          { shingle_dk }
-                    else if on_knee     { shingle_dark }       // visible bend line
+                    else if on_knee     { shingle_dark }
                     else if shingle_y_in == 0 { shingle_hi }
                     else if shingle_y_in == 2 { shingle_dark }
                     else if shingle_x_in == 0 { shingle_dark }
@@ -441,10 +497,6 @@ fn paint_barn_hi(img: &mut Image) {
                     };
             plot(img, x, y, c);
         }
-    }
-    // Ridge highlight along the very peak
-    for x in (centre_x - upper_w)..=(centre_x + upper_w) {
-        plot(img, x, peak_y, shingle_hi);
     }
 
     // ── Eave trim band ─────────────────────────────────────────────
