@@ -6,12 +6,33 @@
 use bevy_ecs::prelude::*;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use crate::config::*;
-use crate::world::TileGrid;
+use crate::world::{TileGrid, PheromoneGrid, PheromoneChannel};
 use super::components::*;
 use super::Time;
 
 const SPIDER_SPEED: f32 = 3.2;
 const RIVAL_SPEED:  f32 = 4.0;
+
+/// Hostiles continuously emit alarm pheromone at their tile so nearby
+/// colony workers detect them and swarm via the existing FightBack
+/// behaviour. Spiders are formidable 1-on-1 (worker damage 1.5, spider
+/// damage 3.0; spider hp 22 vs worker hp 14) but a coordinated swarm
+/// of workers wins. This is the natural resolution to "spiders cluster
+/// at the entrance and never get killed" — workers just fight them.
+pub fn hostile_alarm_emission(
+    mut phero: ResMut<PheromoneGrid>,
+    spiders:   Query<&Position, With<Spider>>,
+    rivals:    Query<&Position, With<RivalAnt>>,
+) {
+    for pos in spiders.iter() {
+        phero.deposit(pos.0.x as i32, pos.0.y as i32,
+                      PheromoneChannel::Alarm, 70.0);
+    }
+    for pos in rivals.iter() {
+        phero.deposit(pos.0.x as i32, pos.0.y as i32,
+                      PheromoneChannel::Alarm, 55.0);
+    }
+}
 
 pub fn spider_tick(
     time: Res<Time>,
@@ -21,37 +42,7 @@ pub fn spider_tick(
     if time.dt <= 0.0 { return; }
     let mut rng = StdRng::seed_from_u64(
         (time.total * 1000.0) as u64 ^ 0xA37D_891B_2467_5C13);
-    let entrance_x = COLONY_X as f32;
     for (pos, mut vel, mut s, mut vis) in q.iter_mut() {
-        // Spiders accumulate at the entrance because random wander +
-        // the entrance shaft being the only-passable upward path through
-        // the dirt makes the shaft a funnel. Fix it from two sides:
-
-        // (a) Hard "keep deep" floor. If a spider drifts above the deep
-        // tunnel zone, force it back down with both vertical velocity
-        // *and* outward horizontal velocity so it leaves the entrance
-        // column instead of cycling up and down the shaft.
-        if pos.0.y < (SURFACE_ROW + 18) as f32 {
-            let outward = if pos.0.x < entrance_x { -1.0 } else { 1.0 };
-            vel.0.x = outward * SPIDER_SPEED;
-            vel.0.y = SPIDER_SPEED * 1.5;
-            s.heading_timer = 2.0;
-            continue;
-        }
-
-        // (b) Even when nominally deep, the entrance-shaft column
-        // itself is off-limits. If a spider is climbing the shaft,
-        // shove it sideways so it leaves the funnel.
-        if (pos.0.x - entrance_x).abs() < 5.0
-            && pos.0.y < (SURFACE_ROW + 25) as f32
-        {
-            let outward = if pos.0.x < entrance_x { -1.0 } else { 1.0 };
-            vel.0.x = outward * SPIDER_SPEED * 1.5;
-            vel.0.y = SPIDER_SPEED * 0.5;
-            s.heading_timer = 1.5;
-            continue;
-        }
-
         s.heading_timer -= time.dt;
         if s.heading_timer <= 0.0 {
             s.heading_timer = rng.gen_range(1.2..2.6);

@@ -188,3 +188,4 @@ impl Scenario {
 pub mod escape_simple_chamber;
 pub mod escape_winding_tunnel;
 pub mod hauler_drops_outside;
+pub mod swarm_kills_spider;

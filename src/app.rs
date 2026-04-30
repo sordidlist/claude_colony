@@ -78,6 +78,7 @@ impl App {
             sim::soldier::soldier_tick,
             sim::hostiles::spider_tick,
             sim::hostiles::rival_tick,
+            sim::hostiles::hostile_alarm_emission,
             sim::ai_predator::predator_ai,
             sim::combat::combat_step,
             sim::combat::corpse_decay,
