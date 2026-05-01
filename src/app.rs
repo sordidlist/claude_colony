@@ -52,6 +52,7 @@ impl App {
         world.insert_resource(History::default());
         world.insert_resource(sim::SurfaceFoodSpawner::new(seed));
         world.insert_resource(sim::ColonyStores::default());
+        world.insert_resource(sim::scenery::MowerSchedule::default());
 
         spawn_initial_ants(&mut world, seed);
         spawn_queen(&mut world);
@@ -86,6 +87,7 @@ impl App {
             sim::foraging::pickup_and_deposit,
             sim::lifecycle::update_population,
             sim::scenery::animate_scenery,
+            sim::scenery::mower_lifecycle,
             crate::world::dirt_physics::settle_above_ground,
             crate::world::flow_field::maintain_flow_field,
             milestone_events,

@@ -1,7 +1,7 @@
 //! Pan/zoom camera. World space is in tile units; screen space is pixels.
 
 use macroquad::prelude::*;
-use colony::config::*;
+use crate::config::*;
 
 pub struct Camera {
     pub center: Vec2,   // world tile coords
@@ -17,7 +17,12 @@ impl Camera {
     }
 
     pub fn handle_input(&mut self, dt: f32) {
-        let speed = 60.0 / self.zoom;
+        // Pan speed is divided by zoom so panning feels consistent
+        // regardless of how zoomed-in we are. Halving the numerator
+        // (was 60.0) makes the keyboard pan feel half as fast — the
+        // previous value scrolled the world out from under the user
+        // before they could focus on anything.
+        let speed = 30.0 / self.zoom;
         if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left)  { self.center.x -= speed * dt * 60.0; }
         if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { self.center.x += speed * dt * 60.0; }
         if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up)    { self.center.y -= speed * dt * 60.0; }

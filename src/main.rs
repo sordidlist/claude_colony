@@ -1,9 +1,7 @@
-mod render;
-
 use macroquad::prelude::*;
 use colony::app::App;
 use colony::config::*;
-use crate::render::{Atlas, Camera, TileMapRenderer, FogRenderer, SkyRenderer};
+use colony::render::{self, Atlas, Camera, TileMapRenderer, FogRenderer, SkyRenderer};
 
 /// Cycles through fast-forward speeds and tracks pause/rewind. Owned by
 /// `main.rs` so input mapping stays out of the sim layer.
@@ -132,32 +130,32 @@ async fn main() {
 
         // ── Render ──────────────────────────────────────────────────────
         let nf = app.world.resource::<colony::sim::TimeOfDay>().night_factor;
-        let tint = crate::render::day_tint(nf);
-        clear_background(crate::render::sky_color(nf));
+        let tint = render::day_tint(nf);
+        clear_background(render::sky_color(nf));
 
         // Sky band: dithered gradient + parallax distant hills, drawn before
         // foreground scenery so trees and the barn punch through.
         sky.draw(&camera, tint);
         // Above-ground scenery sits behind the tile layer so trees / barn
         // overlap the grass at their feet, not float above it.
-        crate::render::scenery::draw_scenery(&mut app.world, &atlas, &camera, tint);
+        render::scenery::draw_scenery(&mut app.world, &atlas, &camera, tint);
         tilemap.draw(&camera, tint);
         fog.draw(&camera);
 
         {
             let phero = app.world.resource::<colony::world::PheromoneGrid>();
-            crate::render::overlays::draw_pheromones(&phero, &camera);
+            render::overlays::draw_pheromones(&phero, &camera);
         }
         {
             let jobs = app.world.resource::<colony::world::DigJobs>();
-            crate::render::overlays::draw_dig_markers(&jobs, &atlas, &camera);
+            render::overlays::draw_dig_markers(&jobs, &atlas, &camera);
         }
 
-        crate::render::sprites::draw_sprites(&mut app.world, &atlas, &camera, tint);
+        render::sprites::draw_sprites(&mut app.world, &atlas, &camera, tint);
 
         {
             let log = app.world.resource::<colony::sim::EventLog>();
-            crate::render::ui::draw_alert_banners(&log);
+            render::ui::draw_alert_banners(&log);
         }
         {
             let pop  = *app.world.resource::<colony::sim::Population>();
@@ -167,13 +165,13 @@ async fn main() {
                 let h = app.world.resource::<colony::sim::history::History>();
                 h.seconds_buffered()
             };
-            let status = crate::render::ui::TimeStatus {
+            let status = render::ui::TimeStatus {
                 paused:    tc.paused,
                 rewinding,
                 ff_label:  tc.label(),
                 history_seconds,
             };
-            crate::render::ui::draw_bottom_stats(&pop, &jobs, &tod, status,
+            render::ui::draw_bottom_stats(&pop, &jobs, &tod, status,
                                                  shown_fps);
         }
 

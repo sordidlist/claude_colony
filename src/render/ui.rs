@@ -6,8 +6,8 @@
 //! sticks to the bottom even on resize.
 
 use macroquad::prelude::*;
-use colony::sim::{Population, EventLog, TimeOfDay};
-use colony::world::DigJobs;
+use crate::sim::{Population, EventLog, TimeOfDay};
+use crate::world::DigJobs;
 
 #[derive(Copy, Clone)]
 pub struct TimeStatus<'a> {

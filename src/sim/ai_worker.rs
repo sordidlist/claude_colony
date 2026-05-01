@@ -488,9 +488,14 @@ fn step_deposit_debris(
         }
     }
 
-    // (5) Walk outward.
+    // (5) Walk outward. *Don't* reset vel.y here — when an ant walks
+    // off the far side of a pile (where the next column's surface is
+    // lower), it needs gravity to accumulate over multiple sub-steps so
+    // it actually falls down to the lower surface. The previous code
+    // zeroed vel.y every frame, so gravity never built up, and ants
+    // ended up floating in the air at whatever altitude they last had
+    // a snap target.
     vel.0.x = dir as f32 * ANT_SPEED;
-    vel.0.y = 0.0;
     let _ = dir_initial;
 }
 

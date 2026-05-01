@@ -3,8 +3,8 @@
 //! GPU when the explored mask changes.
 
 use macroquad::prelude::*;
-use colony::config::*;
-use colony::world::ExploredGrid;
+use crate::config::*;
+use crate::world::ExploredGrid;
 use super::Camera;
 
 pub struct FogRenderer {

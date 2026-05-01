@@ -6,7 +6,7 @@
 //! flat sky into a sense of depth.
 
 use macroquad::prelude::*;
-use colony::config::*;
+use crate::config::*;
 
 const PARALLAX: f32 = 0.55;   // 1.0 = lock to camera, 0.0 = static
 

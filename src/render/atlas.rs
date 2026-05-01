@@ -8,7 +8,7 @@
 //!   row 2 cols 0..1   — food pellet, dig marker
 
 use macroquad::prelude::*;
-use colony::world::TileType;
+use crate::world::TileType;
 
 const CELL: u16 = 8;
 const COLS: u16 = 16;
@@ -31,6 +31,16 @@ const TREE_X: u16 = 144;
 const TREE_Y: u16 = 152;
 const TREE_W: u16 = 24;
 const TREE_H: u16 = 48;
+// Lawn mower — riding-mower silhouette, 32×16 per frame, 2 frames for
+// rotating wheels. Sits in the free strip directly below the dog row
+// (the dog occupies 144..240 × 128..152 across its 4 frames; placing
+// the mower at 168..232 × 152..168 puts it in completely vacant atlas
+// pixels). The previous home at y=128 overlapped dog frames 1-3 and
+// caused the dog to visibly mutate into the mower mid-animation.
+const MOWER_X: u16 = 168;
+const MOWER_Y: u16 = 152;
+const MOWER_W: u16 = 32;
+const MOWER_H: u16 = 16;
 
 pub struct Atlas {
     pub texture: Texture2D,
@@ -73,6 +83,7 @@ impl Atlas {
         // 8×8 cell grid, painted at 1:1 source-to-screen pixel ratio.
         paint_barn_hi(&mut img);
         for f in 0..4 { paint_dog_hi(&mut img, f); }
+        for f in 0..2 { paint_mower_hi(&mut img, f); }
         paint_tree_hi(&mut img);
         paint_sun(&mut img, 6, 5);
         paint_moon(&mut img, 7, 5);
@@ -115,6 +126,13 @@ impl Atlas {
     }
     pub fn tree_rect(&self)  -> Rect {
         Rect::new(TREE_X as f32, TREE_Y as f32, TREE_W as f32, TREE_H as f32)
+    }
+    pub fn mower_rect(&self, frame: u8) -> Rect {
+        Rect::new(
+            (MOWER_X + (frame as u16 % 2) * MOWER_W) as f32,
+            MOWER_Y as f32,
+            MOWER_W as f32, MOWER_H as f32,
+        )
     }
     pub fn sun_rect(&self)   -> Rect { Rect::new(48.0, 40.0, 8.0,  8.0)  }
     pub fn moon_rect(&self)  -> Rect { Rect::new(56.0, 40.0, 8.0,  8.0)  }
@@ -869,6 +887,119 @@ fn paint_dog_hi(img: &mut Image, frame: u8) {
         plot(img, lx,     21 + off, outline);
         plot(img, lx + 1, 21 + off, outline);
         plot(img, lx + 2, 21 + off, outline);
+    }
+}
+
+fn paint_mower_hi(img: &mut Image, frame: u8) {
+    // 32×16 riding mower facing right. Two frames cycle the wheel
+    // spokes so it reads as rolling. Yellow body, red engine cowl,
+    // gray blade housing slung underneath, black wheels.
+    let frame_off_x = MOWER_X + (frame as u16 % 2) * MOWER_W;
+    let plot = |img: &mut Image, x: i32, y: i32, c: Color| {
+        if x >= 0 && (x as u16) < MOWER_W && y >= 0 && (y as u16) < MOWER_H {
+            img.set_pixel(frame_off_x as u32 + x as u32,
+                          MOWER_Y  as u32 + y as u32, c);
+        }
+    };
+    let body    = rgb(248, 196, 60);   // mower yellow
+    let body_dk = rgb(184, 136, 28);
+    let body_hi = rgb(255, 232, 120);
+    let cowl    = rgb(196, 48, 36);    // engine red
+    let cowl_dk = rgb(132, 28, 20);
+    let blade   = rgb(120, 124, 132);
+    let blade_dk= rgb(72, 76, 84);
+    let seat    = rgb(48, 28, 20);
+    let outline = rgb(24, 16, 8);
+    let tire    = rgb(16, 12, 10);
+    let hub     = rgb(160, 156, 148);
+    let spoke   = rgb(96, 92, 88);
+    let exhaust = rgb(96, 96, 96);
+
+    // Blade housing: slim deck slung along the bottom, x=4..28, y=10..12.
+    for y in 10..=11 { for x in 4..=27 { plot(img, x, y, blade); } }
+    for x in 4..=27 { plot(img, x, 12, blade_dk); }
+    plot(img, 3, 11, blade_dk); plot(img, 28, 11, blade_dk);
+
+    // Main chassis body (yellow), top of deck.
+    for y in 6..=9 { for x in 5..=24 { plot(img, x, y, body); } }
+    // Highlight stripe along the top.
+    for x in 6..=23 { plot(img, x, 6, body_hi); }
+    // Bottom-shadow line on chassis.
+    for x in 5..=24 { plot(img, x, 9, body_dk); }
+    // Chassis outline.
+    for x in 5..=24 { plot(img, x, 5, outline); }
+    plot(img, 4, 6, outline); plot(img, 4, 7, outline); plot(img, 4, 8, outline); plot(img, 4, 9, outline);
+    plot(img, 25, 6, outline); plot(img, 25, 7, outline); plot(img, 25, 8, outline); plot(img, 25, 9, outline);
+
+    // Engine cowl (red box at the front-right).
+    for y in 4..=7 { for x in 19..=24 { plot(img, x, y, cowl); } }
+    for x in 19..=24 { plot(img, x, 3, outline); }
+    for y in 4..=7   { plot(img, 25, y, outline); }
+    plot(img, 18, 4, outline); plot(img, 18, 5, outline); plot(img, 18, 6, outline); plot(img, 18, 7, outline);
+    for x in 20..=23 { plot(img, x, 4, cowl_dk); }
+    plot(img, 22, 5, body_hi); // chrome glint
+
+    // Exhaust pipe poking up from the cowl.
+    plot(img, 23, 2, outline); plot(img, 23, 1, outline); plot(img, 23, 0, outline);
+    plot(img, 24, 2, exhaust); plot(img, 24, 1, exhaust);
+
+    // Driver seat (small bucket near the back-left of the chassis).
+    for y in 3..=5 { for x in 9..=12 { plot(img, x, y, seat); } }
+    plot(img, 8, 4, outline); plot(img, 8, 5, outline);
+    plot(img, 13, 4, outline); plot(img, 13, 5, outline);
+    for x in 9..=12 { plot(img, x, 2, outline); }
+
+    // Steering column from seat-front diagonally up to a wheel.
+    plot(img, 14, 5, outline);
+    plot(img, 15, 4, outline);
+    plot(img, 16, 3, outline);
+    plot(img, 16, 2, outline);
+    // Tiny steering wheel
+    plot(img, 17, 2, outline);
+    plot(img, 17, 3, outline);
+
+    // Front grille bars on the cowl.
+    plot(img, 25, 5, outline);
+    plot(img, 25, 6, outline);
+
+    // ── Wheels ─────────────────────────────────────────────────
+    // Big rear wheel at x=5..9, y=10..14.  Small front at x=22..25, y=11..14.
+    let rear  = (7, 12);   // centre
+    let front = (24, 13);
+
+    // Rear wheel disc
+    for dy in -2..=2 {
+        for dx in -2..=2 {
+            if dx*dx + dy*dy <= 5 {
+                plot(img, rear.0 + dx, rear.1 + dy, tire);
+            }
+        }
+    }
+    plot(img, rear.0, rear.1, hub);
+    // Spoke pattern alternates by frame for rolling animation.
+    let s = match frame & 1 {
+        0 => [(-1, 0i32), (1, 0), (0, -1), (0, 1)],
+        _ => [(-1, -1),   (1, 1), (-1, 1), (1, -1)],
+    };
+    for (dx, dy) in s.iter() {
+        plot(img, rear.0 + dx, rear.1 + dy, spoke);
+    }
+
+    // Front wheel disc (smaller)
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            if dx*dx + dy*dy <= 2 {
+                plot(img, front.0 + dx, front.1 + dy, tire);
+            }
+        }
+    }
+    plot(img, front.0, front.1, hub);
+    let fs = match frame & 1 {
+        0 => [(-1, 0i32), (1, 0)],
+        _ => [(0, -1),    (0, 1)],
+    };
+    for (dx, dy) in fs.iter() {
+        plot(img, front.0 + dx, front.1 + dy, spoke);
     }
 }
 

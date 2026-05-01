@@ -1,7 +1,7 @@
 //! Pheromone + dig-marker overlays. Drawn after tiles, before sprites.
 
 use macroquad::prelude::*;
-use colony::world::{PheromoneGrid, PheromoneChannel, DigJobs};
+use crate::world::{PheromoneGrid, PheromoneChannel, DigJobs};
 use super::{Atlas, Camera};
 
 pub fn draw_pheromones(phero: &PheromoneGrid, cam: &Camera) {

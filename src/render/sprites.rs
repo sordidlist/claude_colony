@@ -3,7 +3,7 @@
 //! frame for the whole population.
 
 use macroquad::prelude::*;
-use colony::sim::components::*;
+use crate::sim::components::*;
 use super::{Atlas, Camera};
 
 pub fn draw_sprites(
@@ -20,7 +20,7 @@ pub fn draw_sprites(
     // royal purple. Helps the player locate the queen anywhere in the
     // tunnel network even when the camera is elsewhere or fog covers
     // her chamber.
-    let total = world.resource::<colony::sim::Time>().total;
+    let total = world.resource::<crate::sim::Time>().total;
     let mut qglow = world.query::<(&Position, &Ant)>();
     for (p, a) in qglow.iter(world) {
         if !matches!(a.kind, AntKind::Queen) { continue; }

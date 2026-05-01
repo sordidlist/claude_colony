@@ -4,9 +4,9 @@
 //! lighting.
 
 use macroquad::prelude::*;
-use colony::config::*;
-use colony::sim::scenery::{Decoration, DecorKind, DecorPos};
-use colony::sim::TimeOfDay;
+use crate::config::*;
+use crate::sim::scenery::{Decoration, DecorKind, DecorPos};
+use crate::sim::TimeOfDay;
 use super::{Atlas, Camera};
 
 pub fn draw_scenery(
@@ -34,6 +34,12 @@ pub fn draw_scenery(
                 // 8×8 src at 3×3 tiles → 3× pixel-art scale.
                 draw_world_sprite(&atlas.texture, atlas.dog_rect(d.frame),
                                   p.x, p.y, 3.0, 3.0,
+                                  d.flip_x, tint, cam);
+            }
+            DecorKind::Mower => {
+                // 32×16 source painted at 4×2 tiles (1:1 source-to-screen).
+                draw_world_sprite(&atlas.texture, atlas.mower_rect(d.frame),
+                                  p.x, p.y, 4.0, 2.0,
                                   d.flip_x, tint, cam);
             }
             DecorKind::Cloud => {

@@ -8,8 +8,8 @@
 //! This trades GPU bandwidth for one draw call instead of 16k per frame.
 
 use macroquad::prelude::*;
-use colony::config::*;
-use colony::world::{TileGrid, TileType};
+use crate::config::*;
+use crate::world::{TileGrid, TileType};
 use super::atlas::Atlas;
 
 pub struct TileMapRenderer {
