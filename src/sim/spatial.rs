@@ -15,6 +15,10 @@ pub struct SpatialGrid {
     buckets: Vec<Vec<Entity>>,
 }
 
+impl Default for SpatialGrid {
+    fn default() -> Self { Self::new() }
+}
+
 impl SpatialGrid {
     pub fn new() -> Self {
         let cols = (WORLD_WIDTH  + SPATIAL_CELL - 1) / SPATIAL_CELL;

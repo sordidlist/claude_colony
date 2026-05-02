@@ -94,6 +94,7 @@ pub fn animate_scenery(
     time: Res<Time>,
     mut grid: ResMut<TileGrid>,
     mut schedule: ResMut<MowerSchedule>,
+    mut grass: ResMut<crate::world::GrassField>,
     mut q: Query<(&mut DecorPos, &mut Decoration)>,
 ) {
     let dt = time.dt;
@@ -164,6 +165,9 @@ pub fn animate_scenery(
                             shave_top_above_surface(&mut grid, foot_col);
                         }
                     }
+                    // Mow the lawn — every column the deck rolls
+                    // over gets its grass clipped to zero.
+                    grass.mow(foot_col);
                 }
             }
             DecorKind::Cloud => {

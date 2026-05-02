@@ -265,39 +265,86 @@ fn paint_rival_ant(img: &mut Image, col: u16, row: u16, carrying: bool) {
 
 fn paint_ant_with_palette(img: &mut Image, col: u16, row: u16,
                           carrying: bool, p: &AntPalette) {
+    // Refined side-profile ant facing right. The pose now reads
+    // unambiguously as an ant at a glance: rounded abdomen at the
+    // rear, a clear single-pixel petiole pinch, narrower thorax,
+    // distinct head with mandibles + a bright eye, and curving
+    // antennae sweeping forward. Each body segment has its own
+    // outline + highlight so the silhouette holds shape against
+    // dirt and grass backgrounds. Six legs animate between two
+    // stride frames.
+    //
+    //     . . . . . a a .   antennae (curve up-and-forward)
+    //     . . . . a . . a
+    //     . O O O . O O O
+    //     O B b B w T H E   abdomen · petiole · thorax · head + eye
+    //     O B b B w T H H
+    //     . O O O . O O O
+    //     L . L . L . L .   stride frame A
+    //     . L . L . L . L   stride frame B (opposite phase)
     let frame = (col % 4) as i32;
-    let wig = if frame == 0 || frame == 2 { 0 } else { 1 };
+    let wig   = if frame == 0 || frame == 2 { 0 } else { 1 };
+    let bx    = col * CELL;
+    let by    = row * CELL;
+    let plot  = |img: &mut Image, x: u16, y: u16, c: Color| {
+        if x < CELL && y < CELL {
+            px(img, bx + x, by + y, c);
+        }
+    };
 
-    // Outline ring
-    for &(x, y) in &[
-        (1u16, 3u16), (2, 2), (3, 2), (4, 2), (5, 2), (6, 2), (7, 3),
-        (1, 4),                                                  (7, 4),
-        (2, 5), (3, 5), (4, 5), (5, 5), (6, 5),
-    ] {
-        px(img, col*CELL + x, row*CELL + y, p.outline);
+    // ── Abdomen — cols 1..3, two rows tall (3..=4) with a rounded
+    // rear that shrinks the silhouette toward col 0.
+    for y in 3..=4 {
+        for x in 1..=3 { plot(img, x, y, p.body); }
     }
-    // Body fill
-    for x in 2..=6 {
-        px(img, col*CELL + x, row*CELL + 3, p.body);
-        px(img, col*CELL + x, row*CELL + 4, p.body);
-    }
-    // Highlight + head accent
-    px(img, col*CELL + 3, row*CELL + 3, p.body_hi);
-    px(img, col*CELL + 4, row*CELL + 3, p.body_hi);
-    px(img, col*CELL + 6, row*CELL + 4, p.body_hi);
+    // Highlight strip along the abdomen's upper-back.
+    plot(img, 1, 3, p.body_hi);
+    plot(img, 2, 3, p.body_hi);
+    // Petiole — a single-pixel waist at col 4 row 3-4. Only the
+    // middle of those two rows gets a body pixel; the others stay
+    // empty so the silhouette visibly pinches.
+    plot(img, 4, 4, p.body);
+    // Thorax — col 5, both rows. Slightly narrower than the abdomen
+    // already because of the missing top-row pixel at col 4.
+    plot(img, 5, 3, p.body);
+    plot(img, 5, 4, p.body);
+    plot(img, 5, 3, p.body_hi);   // tiny thorax sheen
+    // Head — cols 6..7, both rows.
+    for y in 3..=4 { for x in 6..=7 { plot(img, x, y, p.body); } }
+    // Eye — a bright pixel near the front of the head. Reads as
+    // "this end is the head" at any zoom.
+    plot(img, 7, 3, p.body_hi);
 
-    // Animated legs
-    px(img, col*CELL + 2, row*CELL + (5 + wig) as u16, p.leg);
-    px(img, col*CELL + 4, row*CELL + (5 + wig) as u16, p.leg);
-    px(img, col*CELL + 6, row*CELL + (5 + wig) as u16, p.leg);
-    px(img, col*CELL + 3, row*CELL + (6 + (1 - wig)) as u16, p.leg);
-    px(img, col*CELL + 5, row*CELL + (6 + (1 - wig)) as u16, p.leg);
+    // ── Outline frame around the body. Top + bottom + abdomen rear,
+    // with a deliberate one-pixel break at col 4 (the petiole) so
+    // the waist pinch is visible from above and below.
+    plot(img, 0, 3, p.outline); plot(img, 0, 4, p.outline); // abdomen rear
+    for x in 1..=3 { plot(img, x, 2, p.outline); plot(img, x, 5, p.outline); }
+    // Petiole gap at col 4 (intentional — no top/bottom outline pixel here).
+    plot(img, 5, 2, p.outline); plot(img, 5, 5, p.outline);
+    for x in 6..=7 { plot(img, x, 2, p.outline); plot(img, x, 5, p.outline); }
+    // Front of head outline (pads the cell so the head silhouette closes off).
+    plot(img, 7, 4, p.outline);
+
+    // ── Antennae — two thin curving stalks. Row 1 has the bend, row 0
+    // the tips. They sweep up-and-forward from the head.
+    plot(img, 6, 1, p.leg);
+    plot(img, 5, 0, p.leg);
+    plot(img, 7, 1, p.leg);
+    plot(img, 6, 0, p.leg);
+
+    // ── Legs — six visible across two stride frames. Frame A places
+    // legs at the "lifted" diagonal; frame B at the "planted"
+    // diagonal. This is the classic 2-frame insect gait.
+    let (lift_row, plant_row): (u16, u16) = if wig == 0 { (6, 7) } else { (7, 6) };
+    for &x in &[1u16, 3, 5, 7] { plot(img, x, lift_row,  p.leg); }
+    for &x in &[2u16, 4, 6]    { plot(img, x, plant_row, p.leg); }
 
     if carrying {
-        px(img, col*CELL + 0, row*CELL + 3, p.outline);
-        px(img, col*CELL + 0, row*CELL + 4, p.outline);
-        px(img, col*CELL + 1, row*CELL + 2, p.cargo);
-        px(img, col*CELL + 1, row*CELL + 3, p.cargo);
+        // Cargo — small bright parcel held on top of the abdomen,
+        // not behind it (where the petiole was eating into the strap).
+        plot(img, 1, 1, p.cargo);
+        plot(img, 2, 1, p.cargo);
     }
 }
 
@@ -1514,48 +1561,83 @@ fn paint_moon(img: &mut Image, col: u16, row: u16) {
 }
 
 fn paint_soldier_ant(img: &mut Image, col: u16, row: u16) {
-    // Larger, darker, more armoured silhouette than worker. Iron-grey
-    // chitin with black outline and faint red highlights — visibly a
-    // different caste at any zoom.
-    let outline = rgb(4, 2, 6);
-    let body    = rgb(48, 36, 56);
-    let body_hi = rgb(112, 92, 124);
-    let armor   = rgb(176, 64, 48);
-    let leg     = rgb(16, 12, 18);
+    // Soldier caste — same side-profile silhouette as the worker so
+    // it instantly reads "ant", but with a noticeably bigger head
+    // and *visible mandibles* extending forward. Coloured in
+    // warm rust + dark red so a soldier never gets confused with a
+    // spider (which is desaturated dark grey/black). Antennae as
+    // before, six legs animated.
+    //
+    // Layout (col 0..7), head facing right with mandibles at col 7:
+    //
+    //     . . . . . . . a        antenna tip
+    //     . . . . . . a .        antenna stalk
+    //     . . o o o . H H        body top (head bigger than worker)
+    //     . o B B B w H M        abdomen · waist · thorax → head + mandible (M)
+    //     . . o o o . H H        body bottom row
+    //     . . l . . l . l
+    //     . l . l . l . .
+    //     . . . . . . . .
+
+    // Soldier caste palette — same lavender / dark-purple family as
+    // the worker (which is the queen's lineage) so the colony reads
+    // as one species. The soldier is just a darker, deeper-purple
+    // shade of that family — visibly bigger and chitinous, but
+    // unmistakably the same kind of ant.
+    let outline    = rgb(8,  4,  18);
+    let body       = rgb(46, 32, 78);    // darker than worker body (#483879)
+    let body_hi    = rgb(96, 76, 148);
+    let head       = rgb(28, 18, 56);
+    let head_hi    = rgb(72, 54, 124);
+    let mandible   = rgb(220, 200, 240); // pale lavender mandible tips
+    let leg        = rgb(14,  8, 28);
+
     let frame = (col % 4) as i32;
-    let wig = if frame == 0 || frame == 2 { 0 } else { 1 };
-
-    // Outline ring (slightly fatter than worker)
-    for &(x, y) in &[
-        (1u16, 2u16), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1), (7, 2),
-        (1, 3), (1, 4), (1, 5),                 (7, 3), (7, 4), (7, 5),
-        (2, 6), (3, 6), (4, 6), (5, 6), (6, 6),
-    ] {
-        px(img, col*CELL + x, row*CELL + y, outline);
-    }
-    // Body fill (taller than worker — fills 2..6)
-    for y in 2..=5 {
-        for x in 2..=6 {
-            px(img, col*CELL + x, row*CELL + y, body);
+    let wig   = if frame == 0 || frame == 2 { 0 } else { 1 };
+    let bx    = col * CELL;
+    let by    = row * CELL;
+    let plot  = |img: &mut Image, x: u16, y: u16, c: Color| {
+        if x < CELL && y < CELL {
+            px(img, bx + x, by + y, c);
         }
-    }
-    // Highlight strip
-    px(img, col*CELL + 3, row*CELL + 2, body_hi);
-    px(img, col*CELL + 4, row*CELL + 2, body_hi);
-    px(img, col*CELL + 5, row*CELL + 2, body_hi);
-    // Red shoulder armour band
-    px(img, col*CELL + 2, row*CELL + 3, armor);
-    px(img, col*CELL + 6, row*CELL + 3, armor);
-    px(img, col*CELL + 6, row*CELL + 4, armor);
-    // Mandibles / head accent
-    px(img, col*CELL + 6, row*CELL + 5, body_hi);
+    };
 
-    // Legs
-    px(img, col*CELL + 2, row*CELL + (6 + wig) as u16, leg);
-    px(img, col*CELL + 4, row*CELL + (6 + wig) as u16, leg);
-    px(img, col*CELL + 6, row*CELL + (6 + wig) as u16, leg);
-    px(img, col*CELL + 3, row*CELL + (7 - wig) as u16, leg);
-    px(img, col*CELL + 5, row*CELL + (7 - wig) as u16, leg);
+    // Body — abdomen (cols 1-3), waist (col 4), thorax (col 5),
+    // bigger head (cols 6-7). Three rows tall (3..=5).
+    for x in 1..=3 { for y in 3..=5 { plot(img, x, y, body); } }
+    plot(img, 4, 4, body);                          // waist single pixel
+    plot(img, 5, 4, body);                          // thorax
+    for x in 6..=7 { for y in 3..=5 { plot(img, x, y, head); } }
+
+    // Top + bottom of segments (with a gap at the petiole).
+    for x in 1..=3 { plot(img, x, 3, body); plot(img, x, 5, body); }
+    plot(img, 5, 3, body); plot(img, 5, 5, body);
+
+    // Outline frame.
+    plot(img, 0, 4, outline);                            // abdomen rear
+    for x in 1..=3 { plot(img, x, 2, outline); plot(img, x, 6, outline); }
+    plot(img, 5, 2, outline); plot(img, 5, 6, outline);
+    for x in 6..=7 { plot(img, x, 2, outline); plot(img, x, 6, outline); }
+
+    // Highlights — abdomen sheen + head sheen.
+    plot(img, 2, 3, body_hi);
+    plot(img, 6, 3, head_hi);
+
+    // Eye on the head.
+    plot(img, 7, 3, outline);
+
+    // Mandibles — pale yellow tips forward of the head, the iconic
+    // soldier-caste cue. Two pixels protruding past the head outline.
+    plot(img, 7, 4, mandible);
+
+    // Antennae.
+    plot(img, 6, 1, leg);
+    plot(img, 7, 0, leg);
+
+    // Legs — six, alternating stride frames.
+    let (front_row, rear_row): (u16, u16) = if wig == 0 { (6, 7) } else { (7, 6) };
+    for &x in &[2u16, 5, 7]                  { plot(img, x, front_row, leg); }
+    for &x in &[1u16, 3, 6]                  { plot(img, x, rear_row,  leg); }
 }
 
 fn paint_brood(img: &mut Image, col: u16, row: u16) {
@@ -1591,12 +1673,21 @@ fn paint_corpse(img: &mut Image, col: u16, row: u16) {
 }
 
 fn paint_spider(img: &mut Image, col: u16, row: u16, frame: u8) {
-    // 16×16 spider — round dark body, glowing red eyes, eight legs.
-    let body_dk = rgb(14, 12, 18);
-    let body    = rgb(38, 34, 48);
-    let body_hi = rgb(82, 76, 96);
+    // 16×16 top-down spider with an unambiguously arachnid silhouette
+    // — bulbous body, no antennae, and *long, clearly bent* legs that
+    // span all the way to the edge of the cell. The previous design
+    // had short stubby legs and read as "small dark creature with
+    // detail," which was easy to confuse with the soldier-ant sprite
+    // at low zoom. The new legs reach pixels 0 and 15 with a visible
+    // mid-segment "knee," so the silhouette has eight long
+    // spider-legs splayed out around a round body at any zoom level.
+    let body_dk = rgb(10, 8, 14);
+    let body    = rgb(34, 30, 44);
+    let body_hi = rgb(72, 64, 86);
     let leg     = rgb(8, 6, 12);
+    let leg_hi  = rgb(48, 40, 60);
     let eye     = rgb(255, 32, 28);
+    let fang    = rgb(208, 192, 176);
     let bx = col * CELL;
     let by = row * CELL;
 
@@ -1606,53 +1697,58 @@ fn paint_spider(img: &mut Image, col: u16, row: u16, frame: u8) {
         }
     };
 
-    // Body — rounded oval, pixels (5..11, 5..11)
-    let body_cells: [(i32, i32); 28] = [
-        (6,5),(7,5),(8,5),(9,5),
-        (5,6),(6,6),(7,6),(8,6),(9,6),(10,6),
+    // Bulbous abdomen + smaller cephalothorax. Two segments give it a
+    // proper spider shape rather than a single uniform blob.
+    let abdomen: [(i32, i32); 24] = [
+        (6,6),(7,6),(8,6),(9,6),
         (5,7),(6,7),(7,7),(8,7),(9,7),(10,7),
         (5,8),(6,8),(7,8),(8,8),(9,8),(10,8),
         (5,9),(6,9),(7,9),(8,9),(9,9),(10,9),
+        (6,10),(9,10),
     ];
-    for (x, y) in body_cells { plot(img, x, y, body); }
-    // Top highlight
-    for &(x, y) in &[(7i32,5i32),(8,5),(6,6),(7,6)] { plot(img, x, y, body_hi); }
-    // Bottom shadow
-    for &(x, y) in &[(5i32,9i32),(6,9),(9,9),(10,9)] { plot(img, x, y, body_dk); }
-    // Eyes
-    plot(img, 6, 7, eye);
-    plot(img, 9, 7, eye);
+    for (x, y) in abdomen { plot(img, x, y, body); }
+    // Cephalothorax — small bump above the abdomen.
+    plot(img, 7, 5, body); plot(img, 8, 5, body);
 
-    // Legs — 4 per side, animated by `frame`. Each leg is a 3-pixel diagonal
-    // line. Frame 0 has legs spread "high"; frame 1 has them "low" — the
-    // alternation reads as scuttling motion.
+    // Highlights + shadow for a rounded look.
+    for &(x, y) in &[(6i32, 7i32), (7, 6), (8, 6)] { plot(img, x, y, body_hi); }
+    for &(x, y) in &[(5i32, 9i32), (6,10),(9,10),(10, 9)] { plot(img, x, y, body_dk); }
+
+    // Eyes — a pair of glowing red dots at the FRONT of the
+    // cephalothorax (rows 5-6), so the front of the creature is
+    // unmistakable.
+    plot(img, 7, 6, eye);
+    plot(img, 8, 6, eye);
+    // Tiny pale fang dots below the eyes — sells the "spider, not ant".
+    plot(img, 7, 7, fang);
+    plot(img, 8, 7, fang);
+
+    // ── Legs — eight, four per side, with a clear mid-leg knee and
+    // tips that touch the edges of the 16×16 cell. Each leg is four
+    // pixels: shoulder → knee → mid-segment → tip. The wig offset
+    // shifts tips between two stride frames so the gait reads as
+    // scuttling.
     let wig = if frame == 0 { 0 } else { 1 };
 
-    // Left side legs (out from x=4..0)
-    let left_legs: [(i32, i32, i32, i32, i32, i32); 4] = [
-        // (knee_x, knee_y, foot_x, foot_y, mid_x, mid_y) — uses wig offset
-        (4, 5 + wig, 1, 4 + wig, 3, 5 + wig),
-        (4, 6 + wig, 1, 6 + wig, 3, 6 + wig),
-        (4, 8 - wig, 1, 9 - wig, 3, 8 - wig),
-        (4, 9 - wig, 1, 11 - wig, 3, 10 - wig),
-    ];
-    for (kx, ky, fx, fy, mx, my) in left_legs {
-        plot(img, mx, my, leg);
-        plot(img, kx, ky, leg);
-        plot(img, fx, fy, leg);
-    }
-    // Right side legs — mirrored
-    let right_legs: [(i32, i32, i32, i32, i32, i32); 4] = [
-        (11, 5 + wig, 14, 4 + wig, 12, 5 + wig),
-        (11, 6 + wig, 14, 6 + wig, 12, 6 + wig),
-        (11, 8 - wig, 14, 9 - wig, 12, 8 - wig),
-        (11, 9 - wig, 14, 11 - wig, 12, 10 - wig),
-    ];
-    for (kx, ky, fx, fy, mx, my) in right_legs {
-        plot(img, mx, my, leg);
-        plot(img, kx, ky, leg);
-        plot(img, fx, fy, leg);
-    }
+    let mut plot_leg = |shoulder: (i32, i32), knee: (i32, i32),
+                        mid: (i32, i32), tip: (i32, i32)| {
+        plot(img, shoulder.0, shoulder.1, leg_hi);
+        plot(img, knee.0,     knee.1,     leg);
+        plot(img, mid.0,      mid.1,      leg);
+        plot(img, tip.0,      tip.1,      leg);
+    };
+
+    // Left-side legs (4). Tips on the left edge (x = 0..1).
+    plot_leg((4, 5),  (3, 3 + wig),  (1, 2 + wig),  (0, 1 + wig));   // forward-most
+    plot_leg((5, 6),  (3, 5),        (1, 5 + wig),  (0, 6 + wig));
+    plot_leg((5, 9),  (3, 10 - wig), (1, 10 - wig), (0, 11 - wig));
+    plot_leg((4, 10), (3, 12 - wig), (1, 13 - wig), (0, 14 - wig));  // rear-most
+
+    // Right-side legs — mirrored.
+    plot_leg((11, 5),  (12, 3 + wig),  (14, 2 + wig),  (15, 1 + wig));
+    plot_leg((10, 6),  (12, 5),        (14, 5 + wig),  (15, 6 + wig));
+    plot_leg((10, 9),  (12, 10 - wig), (14, 10 - wig), (15, 11 - wig));
+    plot_leg((11, 10), (12, 12 - wig), (14, 13 - wig), (15, 14 - wig));
 }
 
 fn paint_queen(img: &mut Image, col: u16, row: u16) {

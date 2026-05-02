@@ -66,6 +66,23 @@ pub mod rewind_doesnt_break_combat;
 pub mod mower_shaves_piles;
 pub mod mower_retires_after_laps;
 pub mod mower_kills_workers;
+pub mod full_haul_cycle;
+pub mod single_ant_ten_haul_cycles;
+pub mod fifty_of_hundred_complete_haul;
+pub mod queen_migrates_deeper;
+pub mod spider_kills_lone_worker;
+pub mod four_workers_kill_spider;
+pub mod spider_triggers_alarm;
+pub mod worker_engages_nearby_spider;
+pub mod spider_hunts_nearby_ant;
+pub mod hauler_unsticks_after_attempts;
+pub mod grass_grows_over_time;
+pub mod mower_shortens_grass;
+pub mod worker_per_frame_hostile_reflex;
+pub mod invaders_arrive_from_offscreen;
+pub mod invader_wave_escalation;
+pub mod surface_openings_stay_narrow;
+pub mod surface_holes_keep_spacing;
 
 /// All scenarios known to the test runner and viewer.
 pub fn registry() -> Vec<ScenarioDef> {
@@ -84,6 +101,23 @@ pub fn registry() -> Vec<ScenarioDef> {
         mower_shaves_piles::def(),
         mower_retires_after_laps::def(),
         mower_kills_workers::def(),
+        full_haul_cycle::def(),
+        single_ant_ten_haul_cycles::def(),
+        fifty_of_hundred_complete_haul::def(),
+        queen_migrates_deeper::def(),
+        spider_kills_lone_worker::def(),
+        four_workers_kill_spider::def(),
+        spider_triggers_alarm::def(),
+        worker_engages_nearby_spider::def(),
+        spider_hunts_nearby_ant::def(),
+        hauler_unsticks_after_attempts::def(),
+        grass_grows_over_time::def(),
+        mower_shortens_grass::def(),
+        worker_per_frame_hostile_reflex::def(),
+        invaders_arrive_from_offscreen::def(),
+        invader_wave_escalation::def(),
+        surface_openings_stay_narrow::def(),
+        surface_holes_keep_spacing::def(),
     ]
 }
 

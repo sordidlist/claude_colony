@@ -18,7 +18,7 @@ pub fn soldier_tick(
                    (Without<Ant>, Without<Brood>, Without<Food>,
                     Or<(With<Spider>, With<RivalAnt>)>)>,
     mut soldiers: Query<(&Position, &mut Velocity, &mut SoldierAi,
-                         &mut VisualState, &Ant)>,
+                         &mut VisualState, &Ant, &mut AiTrace)>,
 ) {
     if time.dt <= 0.0 { return; }
     let mut rng = StdRng::seed_from_u64(
@@ -26,8 +26,11 @@ pub fn soldier_tick(
 
     let entrance = (COLONY_X as f32 + 0.5, COLONY_Y as f32 + 0.5);
 
-    for (pos, mut vel, mut ai, mut vis, a) in soldiers.iter_mut() {
+    for (pos, mut vel, mut ai, mut vis, a, mut trace) in soldiers.iter_mut() {
         if a.kind != AntKind::Soldier { continue; }
+        // patrol_target == None means "currently chasing an enemy" in
+        // this AI; track it to detect engage / disengage transitions.
+        let was_chasing = ai.patrol_target.is_none();
 
         // Hunt: scan for the nearest enemy within sense radius.
         let sense2 = (SOLDIER_SENSE_RADIUS_T as f32).powi(2);
@@ -77,6 +80,12 @@ pub fn soldier_tick(
                 vel.0.x = 0.0;
                 vel.0.y = 0.0;
             }
+        }
+
+        let is_chasing = ai.patrol_target.is_none();
+        if is_chasing != was_chasing {
+            trace.record(time.total,
+                if is_chasing { "Engaging enemy" } else { "Resumed patrol" });
         }
 
         vis.anim_t += time.dt;

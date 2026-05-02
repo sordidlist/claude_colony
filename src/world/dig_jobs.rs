@@ -112,8 +112,12 @@ impl DigJobs {
             .map(|s| (s.info.tx, s.info.ty, s.info.progress, s.claimed))
     }
 
-    /// Push a new job. Returns false if the queue is full.
-    fn push(&mut self, tx: i32, ty: i32, tile_type: TileType) -> bool {
+    /// Push a new job. Returns false if the queue is full or a live
+    /// job for that tile already exists. Used by `director_update`
+    /// during normal operation; also exposed so test scenarios can
+    /// plant a job at a hand-picked tile without spinning up the full
+    /// auto-discovery loop.
+    pub fn push(&mut self, tx: i32, ty: i32, tile_type: TileType) -> bool {
         // Skip duplicates
         for s in self.slots.iter() {
             if s.occupied && !s.completed && s.info.tx == tx && s.info.ty == ty {
@@ -227,7 +231,15 @@ pub fn director_update(
     if jobs.timer > 0.0 { return; }
     jobs.timer = EXPAND_INTERVAL;
     if jobs.occupied_count() >= EXPAND_MAX_QUEUE { return; }
-    if pop.workers < 5 { return; }
+    // Allow the founding three workers to start expanding the colony
+    // immediately. With the previous `< 5` gate, a freshly-spawned
+    // colony with only the initial workers had no jobs in the queue
+    // and the player saw nothing happening for the first minute or
+    // two. The threshold sits at 2 so single-worker test scenarios
+    // (which clear creatures and spawn one tagged subject) don't
+    // get noisy auto-queued jobs underfoot, while the live game's
+    // 3-worker founding does.
+    if pop.workers < 2 { return; }
 
     let candidates = frontier_candidates(&grid, &mut jobs.rng, pop.workers as i32);
     let mut added = 0;
@@ -261,6 +273,7 @@ fn frontier_candidates(grid: &TileGrid, rng: &mut StdRng, pop: i32) -> Vec<(i32,
                 if !grid.in_bounds(nx, ny) { continue; }
                 let nt = grid.get(nx, ny);
                 if !nt.diggable() { continue; }
+                if !surface_width_ok(grid, nx, ny) { continue; }
                 let dist  = (nx - cx).abs() + (ny - cy).abs();
                 if dist > max_dist { continue; }
                 let depth_diff = (ny - target_depth).abs() as f32;
@@ -272,4 +285,82 @@ fn frontier_candidates(grid: &TileGrid, rng: &mut StdRng, pop: i32) -> Vec<(i32,
     }
     out.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     out.into_iter().take(64).map(|((x,y,_),_)| (x,y)).collect()
+}
+
+/// Reject dig candidates that would over-widen the surface layer.
+/// Real ant colonies don't have a flat sheet of grass floating on a
+/// vast cavern — the visible openings are narrow shafts spaced like
+/// proper ant-hill entrances. The rule is two-pronged:
+///
+/// * **Row `SURFACE_ROW`** (the grass row): each opening can be at
+///   most `MAX_SURFACE_HOLE_WIDTH` tiles wide, AND no second opening
+///   can sit closer than `MIN_SURFACE_HOLE_SPACING` to the
+///   candidate's run. This is what gives the lawn separate hills
+///   instead of one big chasm and lets the dog and mower drive over
+///   solid ground between holes.
+/// * **Rows immediately below the surface (depth 1..5)** get a
+///   gentler per-depth width cap so the upper tunnels stay narrow
+///   and widen only at depth.
+///
+/// Below the shallow band anything goes — workers can still
+/// excavate proper chambers.
+fn surface_width_ok(grid: &TileGrid, x: i32, y: i32) -> bool {
+    let depth = y - SURFACE_ROW;
+
+    if depth == 0 {
+        // ── Grass row. Width cap + spacing rule.
+        // Find the contiguous passable run that this candidate
+        // would belong to.
+        let mut left  = x;
+        while left  > 0            && grid.passable(left - 1,  y) { left  -= 1; }
+        let mut right = x;
+        while right < grid.width-1 && grid.passable(right + 1, y) { right += 1; }
+        // Width *with* the new dig — left/right span past x plus
+        // the candidate tile itself.
+        let new_width = (right - left) + 1;
+        if new_width > MAX_SURFACE_HOLE_WIDTH {
+            return false;
+        }
+        // Spacing — no other passable tile within
+        // `MIN_SURFACE_HOLE_SPACING` of either edge of our run.
+        // We scan past the run boundaries (left-1 going further
+        // left, right+1 going further right) for any passable tile
+        // that isn't part of our own run; if found and within
+        // spacing, reject.
+        for dx in 1..=MIN_SURFACE_HOLE_SPACING {
+            let scan = left - dx;
+            if scan < 0 { break; }
+            if grid.passable(scan, y) { return false; }
+        }
+        for dx in 1..=MIN_SURFACE_HOLE_SPACING {
+            let scan = right + dx;
+            if scan >= grid.width { break; }
+            if grid.passable(scan, y) { return false; }
+        }
+        return true;
+    }
+
+    let max_width: i32 = match depth {
+        d if d < 0 => return true,             // above the surface — n/a
+        1 => 4,
+        2 => 5,
+        3 => 6,
+        4 => 7,
+        5 => 8,
+        _ => return true,                      // unconstrained at depth ≥ 6
+    };
+    let mut run: i32 = 1;
+    let mut nx = x - 1;
+    while nx >= 0 && grid.passable(nx, y) {
+        run += 1;
+        nx -= 1;
+        if run > max_width { return false; }
+    }
+    let mut nx = x + 1;
+    while nx < grid.width && grid.passable(nx, y) {
+        run += 1;
+        nx += 1;
+        if run > max_width { return false; }
+    }
+    run <= max_width
 }

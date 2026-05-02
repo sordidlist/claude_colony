@@ -70,4 +70,5 @@ impl PheromoneGrid {
             if *v < 0.05 { *v = 0.0; }
         }
     }
+
 }

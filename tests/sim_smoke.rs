@@ -21,8 +21,12 @@ fn ants_actually_dig() {
         app.step(dt);
         app.world.resource::<Population>().workers
     };
-    assert!(initial_workers > 100,
-            "expected the spawn loop to seat hundreds of workers, got {}",
+    // The colony now starts at the configured founding size — three
+    // workers and a queen — and grows from there. Population is
+    // verified separately in `population_tracking`; this test just
+    // asserts the founding workers actually appear.
+    assert_eq!(initial_workers, colony::config::INITIAL_WORKERS,
+            "expected exactly INITIAL_WORKERS founding workers, got {}",
             initial_workers);
 
     // Snapshot tile state at t=0 so we can count diffs.
@@ -154,5 +158,53 @@ fn queen_is_reachable_from_entrance() {
         assert!(reachable,
                 "seed {}: queen at ({}, {}) is not reachable from entrance ({}, {})",
                 seed, qx, qy, COLONY_X, COLONY_Y);
+    }
+}
+
+/// Hostiles must actually arrive in live gameplay. Spiders no longer
+/// spawn at startup — they (and rival ants) walk in from off-screen
+/// at the surface row over time, scheduled by `InvaderSpawner`.
+/// This smoke test runs the sim past the first-spawn window and
+/// asserts that across a handful of seeds at least one hostile
+/// (spider or rival) has appeared. Catches regressions in the
+/// invader-spawn schedule or its registration in the system graph.
+#[test]
+fn invaders_actually_arrive() {
+    use colony::sim::components::{Spider, RivalAnt};
+    use colony::config::{INVADER_FIRST_SPAWN_S, INVADER_SPAWN_INTERVAL_S,
+                          INVADER_SPAWN_JITTER_S};
+
+    let dt = 1.0 / 60.0;
+    // First spawn fires at FIRST_SPAWN; allow up to one full
+    // `INTERVAL + JITTER` of slack on top in case the first roll
+    // came late, plus a wide safety margin for cold-cache wall
+    // jitter.
+    let budget_sim = INVADER_FIRST_SPAWN_S
+                   + INVADER_SPAWN_INTERVAL_S
+                   + INVADER_SPAWN_JITTER_S
+                   + 30.0;
+    let frames = (budget_sim / dt).ceil() as usize;
+
+    for seed in [1u64, 7, 42, 99, 12345, 4242] {
+        let mut app = App::new(seed);
+        let mut saw_invader = false;
+        for _ in 0..frames {
+            app.step(dt);
+            // Sample every frame — invaders can be killed by mower
+            // or combat pretty quickly after they arrive, so the
+            // "did one ever exist?" check has to be incremental.
+            if app.world.iter_entities().any(|e|
+                e.contains::<Spider>() || e.contains::<RivalAnt>())
+            {
+                saw_invader = true;
+                break;
+            }
+        }
+        assert!(saw_invader,
+                "seed {}: no invader appeared in the first {:.0}s — \
+                 the live game won't have any predators threatening the \
+                 colony. Likely a regression in InvaderSpawner or the \
+                 spawn_invaders system registration.",
+                seed, budget_sim);
     }
 }

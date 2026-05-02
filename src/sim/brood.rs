@@ -28,6 +28,7 @@ pub fn mature_brood(
                 Attacker::new(4.0, 1.6, 0.8),
                 SoldierAi::default(),
                 VisualState::default(),
+                AiTrace::default(),
             ));
             log.push("A new soldier hatched!", [1.0, 0.78, 0.36, 1.0]);
         } else {
@@ -41,6 +42,7 @@ pub fn mature_brood(
                 Attacker::new(2.2, 1.4, 0.7),
                 WorkerBrain::default(),
                 VisualState::default(),
+                AiTrace::default(),
             ));
         }
     }

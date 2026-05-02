@@ -11,6 +11,7 @@ pub fn generate(grid: &mut TileGrid, seed: u64) {
     scatter_rocks(grid, &mut rng);
     scatter_sand(grid, &mut rng);
     carve_colony(grid, &mut rng);
+    carve_spider_warrens(grid, &mut rng);
     assign_variants(grid, &mut rng);
     grid.dirty = true;
 }
@@ -98,30 +99,20 @@ fn blob(grid: &mut TileGrid, cx: i32, cy: i32, r: i32, t: TileType, rng: &mut St
 }
 
 fn carve_colony(grid: &mut TileGrid, rng: &mut StdRng) {
+    // The starting colony is deliberately tiny — a shallow shaft and a
+    // single small chamber at the bottom for the queen and her three
+    // founding workers. Everything beyond that is dug by the workers
+    // over the course of a play session, and the queen migrates
+    // deeper as new chambers open up. See `queen::queen_migration`.
     let cx = COLONY_X;
     let cy = COLONY_Y;
-    let shaft_depth = rng.gen_range(20..32);
+    let shaft_depth = rng.gen_range(6..10);
     carve_tunnel(grid, cx, cy, cx, cy + shaft_depth, rng);
 
-    let chamber_specs = [
-        (cx + rng.gen_range(-10..10), cy + shaft_depth,      6, 3),
-        (cx + rng.gen_range(-18..-6), cy + shaft_depth - 7,  5, 3),
-        (cx + rng.gen_range(6..18),   cy + shaft_depth - 5,  5, 3),
-    ];
-    for (ccx, ccy, rw, rh) in chamber_specs {
-        let ccx = ccx.clamp(2, grid.width - 3);
-        let ccy = ccy.clamp(SURFACE_ROW + 2, grid.height - 3);
-        carve_chamber(grid, ccx, ccy, rw, rh);
-        carve_tunnel(grid, cx, cy + shaft_depth, ccx, ccy, rng);
-    }
-
-    for _ in 0..10 {
-        let sx = (cx + rng.gen_range(-30..30)).clamp(2, grid.width - 3);
-        let sy = (cy + rng.gen_range(6..shaft_depth)).clamp(SURFACE_ROW + 2, grid.height - 3);
-        let ex = (sx + rng.gen_range(-20..20)).clamp(2, grid.width - 3);
-        let ey = (sy + rng.gen_range(0..10)).clamp(SURFACE_ROW + 2, grid.height - 3);
-        carve_tunnel(grid, sx, sy, ex, ey, rng);
-    }
+    // One small founding chamber at the shaft's base.
+    let ccx = cx;
+    let ccy = (cy + shaft_depth).clamp(SURFACE_ROW + 2, grid.height - 3);
+    carve_chamber(grid, ccx, ccy, 4, 2);
 }
 
 fn carve_tunnel(grid: &mut TileGrid, x0: i32, y0: i32, x1: i32, y1: i32, rng: &mut StdRng) {
@@ -146,6 +137,47 @@ fn carve_tunnel(grid: &mut TileGrid, x0: i32, y0: i32, x1: i32, y1: i32, rng: &m
                 }
             }
         }
+    }
+}
+
+/// Carve a handful of isolated spider warren pockets at mid-depth.
+/// These are the homes the predators spawn into — without them the
+/// new shallow colony procgen would leave the deep underground
+/// completely sealed and `spawn_spiders` would find no passable
+/// candidate tiles at all (resulting in zero spiders for the entire
+/// run). The warrens are deliberately disconnected from the colony
+/// shaft: workers have to dig their way over to them, which is
+/// what turns "there are spiders somewhere underground" into
+/// "spiders are now a threat to the nest."
+fn carve_spider_warrens(grid: &mut TileGrid, rng: &mut StdRng) {
+    let count = 5;
+    let mut placed: Vec<(i32, i32)> = Vec::new();
+    let mut tries = 0;
+    while placed.len() < count && tries < 60 {
+        tries += 1;
+        // Mid-depth band: deep enough that workers have to mean it,
+        // shallow enough that they reach it within a play session.
+        let cy = rng.gen_range(SURFACE_ROW + 14..SURFACE_ROW + 40);
+        let cx = rng.gen_range(20..grid.width - 20);
+        // Don't drop a warren right under the entrance — keep it at
+        // least ~40 tiles horizontal offset so it's a navigation goal,
+        // not an immediate breach point. (Also keeps warrens clear
+        // of the wide chambers used by population-scale test scenarios,
+        // which set up their own ~30-tile-wide chambers around
+        // COLONY_X.)
+        if (cx - COLONY_X).abs() < 40 { continue; }
+        // Spread warrens out so they don't overlap.
+        if placed.iter().any(|(px, py)| (px - cx).abs() < 24 && (py - cy).abs() < 8) {
+            continue;
+        }
+        placed.push((cx, cy));
+        let rw = rng.gen_range(3..=5);
+        let rh = rng.gen_range(2..=3);
+        carve_chamber(grid, cx, cy, rw, rh);
+        // A short stub-tunnel sideways from the warren so a wandering
+        // spider has somewhere to go before bumping into solid dirt.
+        let stub_dx = if rng.gen::<bool>() { rw + 3 } else { -rw - 3 };
+        carve_tunnel(grid, cx, cy, cx + stub_dx, cy, rng);
     }
 }
 

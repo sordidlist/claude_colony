@@ -7,6 +7,8 @@ pub mod ui;
 pub mod fog;
 pub mod scenery;
 pub mod sky;
+pub mod inspector;
+pub mod debug_panel;
 
 pub use atlas::Atlas;
 pub use camera::Camera;

@@ -142,6 +142,7 @@ impl Scenario {
             Attacker::new(2.2, 1.4, 0.7),
             WorkerBrain::default(),
             VisualState::default(),
+            AiTrace::default(),
             TestSubject { id },
         )).id()
     }
@@ -159,21 +160,25 @@ impl Scenario {
             Attacker::new(4.0, 1.6, 0.8),
             SoldierAi::default(),
             VisualState::default(),
+            AiTrace::default(),
             TestSubject { id },
         )).id()
     }
 
     /// Spawn a spider at a tile centre, tagged with `TestSubject.id`.
     pub fn spawn_spider_tagged(&mut self, x: i32, y: i32, id: u8) -> Entity {
+        use crate::config::*;
         let pos = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
         self.app.world.spawn((
             Position(pos),
             Velocity(Vec2::ZERO),
-            Health { hp: 22.0, max_hp: 22.0 },
+            Health { hp: SPIDER_HP, max_hp: SPIDER_HP },
             FactionTag(Faction::Predator),
             Spider::default(),
-            Attacker::new(3.0, 1.5, 1.2),
+            Attacker::new(SPIDER_ATTACK_DAMAGE, SPIDER_ATTACK_RANGE,
+                          SPIDER_ATTACK_COOLDOWN),
             VisualState::default(),
+            AiTrace::default(),
             TestSubject { id },
         )).id()
     }
@@ -190,6 +195,7 @@ impl Scenario {
             Cargo::default(),
             QueenState::default(),
             VisualState::default(),
+            AiTrace::default(),
             TestSubject { id },
         )).id()
     }
@@ -231,6 +237,50 @@ impl Scenario {
             }
         }
         Err(max_frames as f32 * dt)
+    }
+
+    /// Step the App at a given fast-forward speed level, mimicking the
+    /// multi-pass model the live game uses. `ff_passes` is the
+    /// requested speed multiplier (1, 2, 4, 10, 100). The actual
+    /// number of `App::step` calls per outer "wall-clock frame" is
+    /// capped at 10 (matching `main.rs`'s `max_iter`); when the
+    /// requested speed exceeds that cap, the per-step `dt` is scaled
+    /// up proportionally so total elapsed sim time per outer frame
+    /// stays correct. That's what stresses the sim's sub-stepping
+    /// (movement caps each physics step at 0.05s) and is the path
+    /// where speed-related divergence tends to appear.
+    ///
+    /// Returns `Ok(elapsed_sim_seconds)` on predicate success,
+    /// `Err(elapsed)` on timeout.
+    pub fn run_until_at_ff_level<F>(
+        &mut self,
+        max_sim_seconds: f32,
+        ff_passes:       u32,
+        mut predicate:   F,
+    ) -> Result<f32, f32>
+    where F: FnMut(&World) -> bool,
+    {
+        const WALL_DT:  f32 = 1.0 / 60.0;
+        const MAX_ITER: u32 = 10;
+        let actual_passes = ff_passes.max(1).min(MAX_ITER);
+        let scaled_dt = WALL_DT * (ff_passes as f32) / (actual_passes as f32);
+        // Each outer frame advances sim by ff_passes * WALL_DT.
+        let outer_frames =
+            ((max_sim_seconds * 60.0) / ff_passes as f32).ceil() as usize + 1;
+        let mut sim_elapsed: f32 = 0.0;
+        for _ in 0..outer_frames {
+            for _ in 0..actual_passes {
+                self.app.step(scaled_dt);
+                sim_elapsed += scaled_dt;
+                if predicate(&self.app.world) {
+                    return Ok(sim_elapsed);
+                }
+                if sim_elapsed >= max_sim_seconds {
+                    return Err(sim_elapsed);
+                }
+            }
+        }
+        Err(sim_elapsed)
     }
 
     /// Convenience: did `e` reach within `radius` tiles of `(x, y)`?

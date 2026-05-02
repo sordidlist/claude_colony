@@ -3,6 +3,7 @@
 
 use bevy_ecs::prelude::{Component, Entity};
 use glam::Vec2;
+use std::collections::VecDeque;
 use crate::world::{DigClaim, TileType};
 
 #[derive(Component, Copy, Clone, Debug)]
@@ -74,7 +75,21 @@ pub struct WorkerBrain {
     pub haul_stuck_time: f32,
     /// Last x position checked for progress, used to detect "stuck."
     pub haul_last_x:     i16,
+    /// Number of direction-flip attempts the hauler has made on the
+    /// current cycle. Each flip happens after ~1.5s of no x progress
+    /// (see `step_deposit_debris`). Above `MAX_HAUL_ATTEMPTS` we
+    /// stop oscillating and just drop the pebble at the worker's
+    /// feet — otherwise tall mounds gridlock haulers permanently
+    /// above ground and the colony stops functioning.
+    pub haul_attempts:   u8,
     pub attack_target:  Option<Entity>,
+    /// Number of completed dig → haul → deposit cycles this worker has
+    /// finished, incremented by `step_deposit_debris` each time it
+    /// actually drops the pebble. Saturates at u16::MAX. Used by
+    /// scenario tests as an exact, per-worker cycle counter — no need
+    /// to infer from world-state proxies that the mower or sand-
+    /// physics could perturb.
+    pub cycles_completed: u16,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -92,7 +107,9 @@ impl Default for WorkerBrain {
             haul_target_dist: 0,
             haul_stuck_time: 0.0,
             haul_last_x:     0,
+            haul_attempts:   0,
             attack_target: None,
+            cycles_completed: 0,
         }
     }
 }
@@ -119,18 +136,44 @@ pub struct Food { pub value: u8 }
 pub struct QueenState {
     pub egg_timer: f32,
     pub eggs_laid: u32,
+    /// Sim-seconds remaining before `queen_migration` re-evaluates
+    /// whether a deeper chamber is now reachable. Hits zero on the
+    /// next migration interval; reset to `QUEEN_MIGRATION_INTERVAL_S`
+    /// after each check.
+    pub migration_timer: f32,
+    /// Total times this queen has relocated since founding. Surfaces
+    /// in the inspector and gives a sense of how the colony has
+    /// matured over a play session.
+    pub migrations: u16,
 }
 
 /// Spider — predator faction. Lurks in deep tunnels, wanders, threatens.
 #[derive(Component, Copy, Clone, Debug, Default)]
 pub struct Spider {
     pub heading_timer: f32,
+    /// When > 0, the spider has just made a kill and is "dragging
+    /// its prey back to its lair" — really, walking away from the
+    /// colony entrance at boosted speed for `SPIDER_RETREAT_AFTER_KILL_S`
+    /// seconds. While retreating it ignores its random-walk heading
+    /// and drives directly away from the colony entrance.
+    pub retreat_timer: f32,
 }
 
 /// Rival ant — hostile faction. Patrols the surface near map edges.
 #[derive(Component, Copy, Clone, Debug, Default)]
 pub struct RivalAnt {
     pub heading_timer: f32,
+    /// Worker (light, fast) vs Soldier (heavier, sturdier). Each tier
+    /// gets distinct stats at spawn and a slightly different render
+    /// scale so the player can read the threat at a glance.
+    pub kind: RivalKind,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
+pub enum RivalKind {
+    #[default]
+    Worker,
+    Soldier,
 }
 
 /// Soldier marker. Lives alongside `Ant { kind: Soldier }`. Soldiers patrol
@@ -169,4 +212,42 @@ impl Attacker {
 #[derive(Component, Copy, Clone, Debug)]
 pub struct Corpse {
     pub decay: f32,
+}
+
+/// Number of past decisions an `AiTrace` keeps. Newest entries push out
+/// the oldest. 10 is enough to read a recent behavioural history at a
+/// glance without consuming much memory.
+pub const AI_TRACE_CAPACITY: usize = 10;
+
+/// Per-creature ring buffer of recent AI decisions. Each AI system
+/// (`worker_ai`, `soldier_tick`, `spider_tick`, `rival_tick`,
+/// `queen_tick`) calls `record` when its agent transitions state or
+/// makes a notable choice. The debug inspector reads this to show a
+/// "what was this thing thinking lately" log.
+///
+/// Keeps `String` text instead of an enum to give each AI system free
+/// rein over how it describes the event — a worker might log "claimed
+/// dig at (50, 80)" while a spider logs "new heading: NE". The cost
+/// is one allocation per logged event; cap-trimmed so memory bounded.
+#[derive(Component, Clone, Debug, Default)]
+pub struct AiTrace {
+    pub entries: VecDeque<TraceEntry>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TraceEntry {
+    /// Sim-clock seconds at the time of the event.
+    pub time: f32,
+    /// Free-form description; kept short so the inspector renders it
+    /// on a single line.
+    pub text: String,
+}
+
+impl AiTrace {
+    pub fn record(&mut self, time: f32, text: impl Into<String>) {
+        self.entries.push_back(TraceEntry { time, text: text.into() });
+        while self.entries.len() > AI_TRACE_CAPACITY {
+            self.entries.pop_front();
+        }
+    }
 }

@@ -8,6 +8,10 @@ pub struct Camera {
     pub zoom:   f32,    // pixels per tile
 }
 
+impl Default for Camera {
+    fn default() -> Self { Self::new() }
+}
+
 impl Camera {
     pub fn new() -> Self {
         Self {
@@ -43,6 +47,15 @@ impl Camera {
         let sx = screen_width()  * 0.5 + (wx - self.center.x) * self.zoom;
         let sy = screen_height() * 0.5 + (wy - self.center.y) * self.zoom;
         (sx, sy)
+    }
+
+    /// Inverse of `world_to_screen`. Used by the debug inspector to
+    /// translate the mouse pointer into the tile coordinate the user
+    /// is hovering over.
+    #[inline] pub fn screen_to_world(&self, sx: f32, sy: f32) -> (f32, f32) {
+        let wx = (sx - screen_width()  * 0.5) / self.zoom + self.center.x;
+        let wy = (sy - screen_height() * 0.5) / self.zoom + self.center.y;
+        (wx, wy)
     }
 
     pub fn visible_tile_rect(&self) -> (i32, i32, i32, i32) {

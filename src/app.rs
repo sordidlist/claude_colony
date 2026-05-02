@@ -12,9 +12,8 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use crate::config::*;
 use crate::sim::{self, *};
-use crate::sim::components::{Spider, RivalAnt};
 use crate::sim::history::{History, Snapshot, capture_snapshot, restore_snapshot};
-use crate::world::{TileGrid, PheromoneGrid, WaterGrid, DigJobs, ExploredGrid, ReturnFlowField, dig_jobs};
+use crate::world::{TileGrid, PheromoneGrid, WaterGrid, DigJobs, ExploredGrid, ReturnFlowField, GrassField, dig_jobs};
 
 pub struct App {
     pub world:    World,
@@ -53,11 +52,15 @@ impl App {
         world.insert_resource(sim::SurfaceFoodSpawner::new(seed));
         world.insert_resource(sim::ColonyStores::default());
         world.insert_resource(sim::scenery::MowerSchedule::default());
+        world.insert_resource(GrassField::new(WORLD_WIDTH));
+        world.insert_resource(sim::hostiles::InvaderSpawner::new(seed));
+        world.insert_resource(sim::BalanceTunables::default());
 
         spawn_initial_ants(&mut world, seed);
         spawn_queen(&mut world);
-        spawn_spiders(&mut world, seed);
-        spawn_rivals(&mut world, seed);
+        // Hostiles no longer spawn underground at start. They arrive
+        // from off-screen above ground via the periodic invader
+        // spawner (see `sim::hostiles::spawn_invaders`).
         sim::scenery::spawn_initial_scenery(&mut world, seed);
 
         // ── Schedule ─────────────────────────────────────────────────────
@@ -73,6 +76,7 @@ impl App {
             sim::exploration::update_exploration,
             dig_jobs::director_update,
             sim::queen::queen_tick,
+            sim::queen::queen_migration,
             sim::brood::mature_brood,
         ).chain());
         schedule.add_systems((
@@ -80,7 +84,7 @@ impl App {
             sim::hostiles::spider_tick,
             sim::hostiles::rival_tick,
             sim::hostiles::hostile_alarm_emission,
-            sim::ai_predator::predator_ai,
+            sim::hostiles::spawn_invaders,
             sim::combat::combat_step,
             sim::combat::corpse_decay,
             sim::food_spawn::spawn_surface_food,
@@ -89,6 +93,7 @@ impl App {
             sim::scenery::animate_scenery,
             sim::scenery::mower_lifecycle,
             crate::world::dirt_physics::settle_above_ground,
+            crate::world::grass::grow_grass,
             crate::world::flow_field::maintain_flow_field,
             milestone_events,
         ).chain().after(sim::brood::mature_brood));
@@ -137,80 +142,16 @@ impl App {
     }
 }
 
-fn spawn_spiders(world: &mut World, seed: u64) {
-    use glam::Vec2;
-    let mut rng = StdRng::seed_from_u64(seed.wrapping_add(31));
-    let candidates = {
-        let g = world.resource::<TileGrid>();
-        let mut v = Vec::new();
-        // Spawn spiders well below the colony's natural depth so they
-        // don't immediately drift up to the surface via random wander.
-        for y in (SURFACE_ROW + 35)..g.height - 1 {
-            for x in 2..g.width - 2 {
-                if g.passable(x, y) && g.get(x, y + 1).solid() {
-                    v.push((x, y));
-                }
-            }
-        }
-        v
-    };
-    if candidates.is_empty() { return; }
-    // Spread spawns by claiming a minimum distance between picks, so the
-    // initial spider population scatters across the underground rather
-    // than all bunching in one chamber the rng happened to favour.
-    let mut placed: Vec<(i32, i32)> = Vec::new();
-    let mut tries = 0;
-    while placed.len() < 6 && tries < 200 {
-        tries += 1;
-        let (x, y) = candidates[rng.gen_range(0..candidates.len())];
-        if placed.iter().any(|(px, py)| (px - x).abs() < 30 && (py - y).abs() < 12) {
-            continue;
-        }
-        placed.push((x, y));
-        world.spawn((
-            Position(Vec2::new(x as f32 + 0.5, y as f32 + 0.5)),
-            Velocity(Vec2::ZERO),
-            Health { hp: 22.0, max_hp: 22.0 },
-            FactionTag(Faction::Predator),
-            Spider::default(),
-            Attacker::new(3.0, 1.5, 1.2),
-            VisualState::default(),
-        ));
-    }
-}
-
-fn spawn_rivals(world: &mut World, seed: u64) {
-    use glam::Vec2;
-    let mut rng = StdRng::seed_from_u64(seed.wrapping_add(53));
-    let n_rivals = 6;
-    for i in 0..n_rivals {
-        // Alternate left/right edges of the map at the surface.
-        let from_left = i % 2 == 0;
-        let x = if from_left { rng.gen_range(2..6) }
-                else         { rng.gen_range(WORLD_WIDTH - 7..WORLD_WIDTH - 2) };
-        let y = SURFACE_ROW - 1;
-        let (passable, sx, sy) = {
-            let g = world.resource::<TileGrid>();
-            (g.passable(x, y), x, y)
-        };
-        if !passable { continue; }
-        world.spawn((
-            Position(Vec2::new(sx as f32 + 0.5, sy as f32 + 0.5)),
-            Velocity(Vec2::ZERO),
-            Health { hp: 8.0, max_hp: 8.0 },
-            FactionTag(Faction::Rival),
-            RivalAnt::default(),
-            Attacker::new(2.0, 1.3, 0.7),
-            VisualState::default(),
-        ));
-    }
-}
+// `spawn_spiders` / `spawn_rivals` used to seed an initial
+// underground/edge population. Hostiles now arrive from off-screen
+// over time via `sim::hostiles::spawn_invaders` instead — easier to
+// pace, no surprise lurkers underground at t=0.
 
 fn spawn_queen(world: &mut World) {
     use glam::Vec2;
     let (qx, qy) = {
         let g = world.resource::<TileGrid>();
-        find_queen_spot(&g)
+        sim::queen::find_queen_spot(&g)
     };
     world.spawn((
         Position(Vec2::new(qx, qy)),
@@ -221,62 +162,12 @@ fn spawn_queen(world: &mut World) {
         Cargo::default(),
         QueenState::default(),
         VisualState::default(),
+        AiTrace::default(),
     ));
 }
 
-fn find_queen_spot(grid: &TileGrid) -> (f32, f32) {
-    // Pick the deepest passable tile that is *reachable* from the colony
-    // entrance via 4-connected passable tiles. A bare deepest-tile scan can
-    // land the queen in an isolated procgen pocket the workers can never
-    // walk to — flood-fill from the entrance so we only consider real
-    // chambers off the main shaft.
-    use std::collections::VecDeque;
-    let w = grid.width;
-    let h = grid.height;
-    let mut visited = vec![false; (w * h) as usize];
-    let mut queue   = VecDeque::new();
-
-    if grid.in_bounds(COLONY_X, COLONY_Y) && grid.passable(COLONY_X, COLONY_Y) {
-        visited[grid.idx(COLONY_X, COLONY_Y)] = true;
-        queue.push_back((COLONY_X, COLONY_Y));
-    }
-
-    // We want a stable, predictable choice: among tiles reachable from the
-    // entrance and below the surface, prefer the deepest, then the one
-    // closest to the entrance's vertical axis (so she sits in a central
-    // chamber rather than at the end of a side branch).
-    let mut best: Option<(i32, i32)> = None;
-    while let Some((x, y)) = queue.pop_front() {
-        let standable = y > COLONY_Y && grid.get(x, y + 1).solid();
-        if standable {
-            let better = match best {
-                None => true,
-                Some((bx, by)) => {
-                    if y != by { y > by }
-                    else { (x - COLONY_X).abs() < (bx - COLONY_X).abs() }
-                }
-            };
-            if better { best = Some((x, y)); }
-        }
-        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let nx = x + dx; let ny = y + dy;
-            if !grid.in_bounds(nx, ny) { continue; }
-            let i = grid.idx(nx, ny);
-            if visited[i] || !grid.passable(nx, ny) { continue; }
-            visited[i] = true;
-            queue.push_back((nx, ny));
-        }
-    }
-
-    if let Some((x, y)) = best {
-        (x as f32 + 0.5, y as f32 + 0.5)
-    } else {
-        // Fallback: stand the queen on the surface row at the entrance.
-        // Reaching this branch means worldgen produced no carved chamber at
-        // all, which is itself a bug worth surfacing.
-        (COLONY_X as f32 + 0.5, COLONY_Y as f32 + 0.5)
-    }
-}
+// `find_queen_spot` lives in `sim::queen` so the migration system can
+// share it.
 
 fn spawn_initial_ants(world: &mut World, seed: u64) {
     let mut rng = StdRng::seed_from_u64(seed.wrapping_add(7));
@@ -316,6 +207,7 @@ fn spawn_initial_ants(world: &mut World, seed: u64) {
             Attacker::new(2.2, 1.4, 0.7),
             WorkerBrain::default(),
             VisualState::default(),
+            AiTrace::default(),
         ));
     }
 }

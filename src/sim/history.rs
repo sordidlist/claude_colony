@@ -16,7 +16,7 @@ use std::collections::VecDeque;
 use bevy_ecs::prelude::*;
 use glam::Vec2;
 use crate::config::*;
-use crate::world::{TileGrid, ExploredGrid, DigJobs, dig_jobs::DigJobsSnapshot};
+use crate::world::{TileGrid, ExploredGrid, DigJobs, GrassField, dig_jobs::DigJobsSnapshot};
 use super::components::*;
 use super::scenery::{Decoration, DecorPos, MowerSchedule};
 use super::{Time, TimeOfDay, Population};
@@ -86,6 +86,11 @@ pub struct Snapshot {
     /// can leave the schedule out of sync with the world (e.g. mower
     /// entity restored but schedule still says Cooldown).
     pub mower:       MowerSchedule,
+    /// Grass length per surface column. Snapshotted so a rewind also
+    /// rolls back the lawn — otherwise you'd rewind through a mower
+    /// pass and the grass it shaved would still be cut.
+    pub grass:       Vec<u8>,
+    pub grass_accum: f32,
 }
 
 #[derive(Resource)]
@@ -177,6 +182,8 @@ pub fn capture_snapshot(world: &World) -> Snapshot {
         dig_jobs:    dj.snapshot(),
         population:  *world.resource::<Population>(),
         mower:       *world.resource::<MowerSchedule>(),
+        grass:       world.resource::<GrassField>().length.clone(),
+        grass_accum: world.resource::<GrassField>().accum,
     }
 }
 
@@ -212,6 +219,13 @@ pub fn restore_snapshot(world: &mut World, snap: &Snapshot) {
     world.resource_mut::<Time>().total = snap.time_total;
     *world.resource_mut::<Population>()    = snap.population;
     *world.resource_mut::<MowerSchedule>() = snap.mower;
+    {
+        let mut g = world.resource_mut::<GrassField>();
+        if g.length.len() == snap.grass.len() {
+            g.length.copy_from_slice(&snap.grass);
+        }
+        g.accum = snap.grass_accum;
+    }
     world.resource_mut::<DigJobs>().restore(&snap.dig_jobs);
 
     // Re-spawn ants. Dispatch on the snapshotted `Ant.kind` so a
@@ -235,6 +249,7 @@ pub fn restore_snapshot(world: &mut World, snap: &Snapshot) {
                     a.pos, a.vel, a.cargo, a.vis, a.hp,
                     FactionTag(Faction::Colony),
                     a.ant, brain, attacker,
+                    AiTrace::default(),
                 ));
             }
             AntKind::Soldier => {
@@ -243,6 +258,7 @@ pub fn restore_snapshot(world: &mut World, snap: &Snapshot) {
                     a.pos, a.vel, a.cargo, a.vis, a.hp,
                     FactionTag(Faction::Colony),
                     a.ant, soldier_ai, attacker,
+                    AiTrace::default(),
                 ));
             }
             AntKind::Queen => {
@@ -251,6 +267,7 @@ pub fn restore_snapshot(world: &mut World, snap: &Snapshot) {
                     a.pos, a.vel, a.cargo, a.vis, a.hp,
                     FactionTag(Faction::Colony),
                     a.ant, queen,
+                    AiTrace::default(),
                 ));
             }
         }
@@ -264,7 +281,8 @@ pub fn restore_snapshot(world: &mut World, snap: &Snapshot) {
     // query and becomes unkillable.
     for h in &snap.hostiles {
         let attacker = h.attacker.unwrap_or_else(|| match h.kind {
-            HostileKind::Spider(_) => Attacker::new(3.0, 1.5, 1.2),
+            HostileKind::Spider(_) => Attacker::new(
+                SPIDER_ATTACK_DAMAGE, SPIDER_ATTACK_RANGE, SPIDER_ATTACK_COOLDOWN),
             HostileKind::Rival(_)  => Attacker::new(2.0, 1.3, 0.7),
         });
         match h.kind {
@@ -273,6 +291,7 @@ pub fn restore_snapshot(world: &mut World, snap: &Snapshot) {
                     h.pos, h.vel, h.vis, h.hp,
                     FactionTag(Faction::Predator),
                     s, attacker,
+                    AiTrace::default(),
                 ));
             }
             HostileKind::Rival(r) => {
@@ -280,6 +299,7 @@ pub fn restore_snapshot(world: &mut World, snap: &Snapshot) {
                     h.pos, h.vel, h.vis, h.hp,
                     FactionTag(Faction::Rival),
                     r, attacker,
+                    AiTrace::default(),
                 ));
             }
         }

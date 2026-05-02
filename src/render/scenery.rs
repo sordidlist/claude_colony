@@ -9,6 +9,40 @@ use crate::sim::scenery::{Decoration, DecorKind, DecorPos};
 use crate::sim::TimeOfDay;
 use super::{Atlas, Camera};
 
+/// Draw the grass-blade overlay above the surface row. One thin
+/// vertical strip per visible column whose `GrassField.length` is
+/// non-zero — the lawn shaggies up between mower passes and gets
+/// shaved back down whenever the mower rolls through.
+pub fn draw_grass_blades(
+    grass: &crate::world::GrassField,
+    cam:   &Camera,
+    tint:  Color,
+) {
+    let (x0, _, x1, _) = cam.visible_tile_rect();
+    // Top edge of the grass row in screen-space — blades grow upward
+    // from here, so we anchor at the row's top y.
+    let blade_color = Color::new(0.36 * tint.r, 0.84 * tint.g, 0.32 * tint.b, 1.0);
+    let blade_dark  = Color::new(0.22 * tint.r, 0.56 * tint.g, 0.18 * tint.b, 1.0);
+    let pixel = (cam.zoom / 8.0).max(1.0);
+    for x in x0.max(0)..x1.min(crate::config::WORLD_WIDTH) {
+        let len = grass.at(x);
+        if len == 0 { continue; }
+        let blades_h = (len as f32) * pixel;
+        let (sx, sy) = cam.world_to_screen(x as f32, SURFACE_ROW as f32);
+        // Two blades per tile, slightly offset, so the lawn reads
+        // as texture rather than a solid green strip.
+        draw_rectangle(sx + pixel * 1.0,
+                       sy - blades_h,
+                       pixel, blades_h, blade_color);
+        draw_rectangle(sx + pixel * 4.0,
+                       sy - blades_h * 0.85,
+                       pixel, blades_h * 0.85, blade_dark);
+        draw_rectangle(sx + pixel * 6.0,
+                       sy - blades_h * 0.7,
+                       pixel, blades_h * 0.7, blade_color);
+    }
+}
+
 pub fn draw_scenery(
     world: &mut bevy_ecs::world::World,
     atlas: &Atlas,

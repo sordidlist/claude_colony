@@ -30,7 +30,13 @@ impl TileType {
         matches!(self, Self::Air | Self::Grass | Self::Tunnel | Self::Chamber | Self::Fungus)
     }
     #[inline] pub fn diggable(self) -> bool {
-        matches!(self, Self::Soil | Self::Dirt1 | Self::Dirt2 | Self::Dirt3 | Self::Sand | Self::Mud)
+        // Grass is diggable too — workers can open *new* surface
+        // tunnels alongside the original entrance. The dig director's
+        // `surface_width_ok` filter is what stops them from
+        // pock-marking the lawn into one big chasm.
+        matches!(self,
+            Self::Soil | Self::Dirt1 | Self::Dirt2 | Self::Dirt3
+            | Self::Sand | Self::Mud | Self::Grass)
     }
     #[inline] pub fn solid(self) -> bool { !self.passable() }
 
@@ -42,6 +48,8 @@ impl TileType {
             Self::Dirt2 => DIG_TIME_DIRT2,
             Self::Dirt3 => DIG_TIME_DIRT3,
             Self::Mud   => 5.0,
+            // Grass is loose surface cover — about as fast as soil.
+            Self::Grass => DIG_TIME_SOIL,
             _           => f32::INFINITY,
         }
     }

@@ -13,7 +13,8 @@
 //!   R                reset the scenario to its initial state
 //!   N                advance to the next scenario in the registry
 //!   P                go back one scenario
-//!   Tab              toggle the scenario list overlay
+//!   L                toggle the scenario list overlay
+//!   Tab              hold + hover a creature for the debug inspector
 //!   WASD / arrows    pan the camera
 //!   Mouse wheel      zoom
 //!   Esc / Q          quit
@@ -49,7 +50,8 @@ impl TimeController {
     fn passes(&self) -> u32 { FF_LEVELS[self.ff_index] }
     fn label(&self)  -> &'static str {
         match FF_LEVELS[self.ff_index] {
-            1 => "1×", 2 => "2×", 4 => "4×", 10 => "10×", 100 => "100×", _ => "?",
+            1 => "1×", 2 => "2×", 4 => "4×", 10 => "10×",
+            100 => "100×", 500 => "500×", _ => "?",
         }
     }
 }
@@ -167,7 +169,7 @@ async fn main() {
         if is_key_pressed(KeyCode::Space)        { tc.paused = !tc.paused; }
         if is_key_pressed(KeyCode::RightBracket) { tc.cycle_ff_up(); }
         if is_key_pressed(KeyCode::LeftBracket)  { tc.cycle_ff_down(); }
-        if is_key_pressed(KeyCode::Tab)          { show_list = !show_list; }
+        if is_key_pressed(KeyCode::L)            { show_list = !show_list; }
 
         let mut scenario_changed = false;
         if is_key_pressed(KeyCode::R) {
@@ -251,6 +253,11 @@ async fn main() {
         render::scenery::draw_scenery(&mut running.scenario.app.world,
                                       &atlas, &camera, tint);
         tilemap.draw(&camera, tint);
+        {
+            let grass = running.scenario.app.world
+                              .resource::<colony::world::GrassField>();
+            render::scenery::draw_grass_blades(grass, &camera, tint);
+        }
         fog.draw(&camera);
         {
             let phero = running.scenario.app.world
@@ -291,6 +298,12 @@ async fn main() {
 
         draw_scenario_overlay(&running, idx, registry.len());
         if show_list { draw_scenario_list(&registry, idx); }
+
+        // Hold Tab to inspect a creature under the cursor. Useful
+        // when triaging a scenario that's mis-behaving — see what
+        // the AI was actually thinking right before it went wrong.
+        render::inspector::draw_inspector(&running.scenario.app.world, &camera);
+        render::debug_panel::draw_balance_panel(&mut running.scenario.app.world);
 
         next_frame().await;
     }
@@ -353,7 +366,7 @@ fn draw_scenario_overlay(r: &RunningScenario, idx: usize, total: usize) {
     };
     draw_text(&status, x + pad, y + 64.0, 18.0, state_col);
 
-    let hint = "[N]ext   [P]rev   [R]eset   [Tab] list   [Space] pause   ] [ speed";
+    let hint = "[N]ext   [P]rev   [R]eset   [L]ist   [Tab] inspect   [Space] pause   ] [ speed";
     draw_text(hint, x + pad, y + 86.0, 13.0, dim_text);
 }
 

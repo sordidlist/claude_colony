@@ -1,11 +1,22 @@
-//! Library face of the simulator. Lets `tests/`, the scenario viewer
-//! binary, and future bench harnesses drive the App without going through
-//! the main game binary.
+//! Library crate that holds the game's simulation, rendering, and
+//! test scaffolding. Two binaries depend on this lib:
 //!
-//! `render/` is now exposed as a library module so multiple binaries
-//! (the main game and the scenario viewer) can share it. Tests don't
-//! `use` it, so the GPU/windowing path stays out of the test path even
-//! though macroquad is a top-level dependency.
+//!   * `colony`           — the playable game (`src/main.rs`).
+//!   * `scenario_viewer`  — runs scenario tests at 1× wall-clock so
+//!                          their setups can be inspected visually
+//!                          (`src/bin/scenario_viewer.rs`).
+//!
+//! Module dependency direction:
+//!
+//! ```text
+//!   render → sim → world
+//!                 ↑
+//!             config (leaf)
+//!   scenarios → app → (sim, world)
+//! ```
+//!
+//! Nothing in `world/` or `sim/` imports a renderer type, so the
+//! simulation drives headless tests without touching the GPU.
 
 pub mod config;
 pub mod world;

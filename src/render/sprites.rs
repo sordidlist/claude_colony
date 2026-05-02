@@ -115,32 +115,45 @@ pub fn draw_sprites(
         });
     }
 
-    // Spiders — 2×2 tiles, anchored centre-on-position.
+    // Spiders — drawn at 2.6×2.6 tiles so they read as a real
+    // threat next to a worker (a worker is 1×1; the previous 2×2
+    // size made spiders only modestly bigger). Sprite is anchored
+    // centre-on-position so the larger render expands outward
+    // around the actual collision point, not below it.
+    const SPIDER_DRAW_TILES: f32 = 2.6;
     let mut qs = world.query::<(&Position, &VisualState, &Spider)>();
     for (p, v, _) in qs.iter(world) {
         let tx = p.0.x as i32;
         let ty = p.0.y as i32;
-        if tx < x0 - 2 || tx > x1 + 2 || ty < y0 - 2 || ty > y1 + 2 { continue; }
-        draw_ground_shadow(cam, p.0.x, p.0.y + 0.95, 1.4, 0.28, shadow);
-        let (sx, sy) = cam.world_to_screen(p.0.x - 1.0, p.0.y - 1.0);
+        if tx < x0 - 3 || tx > x1 + 3 || ty < y0 - 3 || ty > y1 + 3 { continue; }
+        draw_ground_shadow(cam, p.0.x, p.0.y + 1.05, 1.8, 0.32, shadow);
+        let half = SPIDER_DRAW_TILES * 0.5;
+        let (sx, sy) = cam.world_to_screen(p.0.x - half, p.0.y - half);
         draw_texture_ex(&atlas.texture, sx, sy, tint, DrawTextureParams {
-            dest_size: Some(Vec2::new(2.0 * cam.zoom, 2.0 * cam.zoom)),
+            dest_size: Some(Vec2::new(SPIDER_DRAW_TILES * cam.zoom,
+                                       SPIDER_DRAW_TILES * cam.zoom)),
             source:    Some(atlas.spider_rect(v.anim_frame)),
             flip_x:    v.facing < 0,
             ..Default::default()
         });
     }
 
-    // Rival ants — same size as workers, red sprite.
+    // Rival ants — workers at 1× tile, soldiers at 1.4× so the
+    // sturdier tier reads as a different threat at any zoom.
     let mut qr = world.query::<(&Position, &VisualState, &RivalAnt)>();
-    for (p, v, _) in qr.iter(world) {
+    for (p, v, r) in qr.iter(world) {
         let tx = p.0.x as i32;
         let ty = p.0.y as i32;
-        if tx < x0 - 1 || tx > x1 + 1 || ty < y0 - 1 || ty > y1 + 1 { continue; }
-        draw_ground_shadow(cam, p.0.x, p.0.y + 0.45, 0.7, 0.18, shadow);
-        let (sx, sy) = cam.world_to_screen(p.0.x - 0.5, p.0.y - 0.5);
+        if tx < x0 - 2 || tx > x1 + 2 || ty < y0 - 2 || ty > y1 + 2 { continue; }
+        let scale = match r.kind {
+            RivalKind::Worker  => 1.0,
+            RivalKind::Soldier => 1.4,
+        };
+        let half = scale * 0.5;
+        draw_ground_shadow(cam, p.0.x, p.0.y + 0.45, scale * 0.7, 0.18 * scale, shadow);
+        let (sx, sy) = cam.world_to_screen(p.0.x - half, p.0.y - half);
         draw_texture_ex(&atlas.texture, sx, sy, tint, DrawTextureParams {
-            dest_size: Some(Vec2::new(cam.zoom, cam.zoom)),
+            dest_size: Some(Vec2::new(scale * cam.zoom, scale * cam.zoom)),
             source:    Some(atlas.rival_ant_cell(v.anim_frame, false)),
             flip_x:    v.facing < 0,
             ..Default::default()

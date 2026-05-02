@@ -27,6 +27,7 @@ impl TimeController {
             4   => "4×",
             10  => "10×",
             100 => "100×",
+            500 => "500×",
             _   => "?",
         }
     }
@@ -140,6 +141,10 @@ async fn main() {
         // overlap the grass at their feet, not float above it.
         render::scenery::draw_scenery(&mut app.world, &atlas, &camera, tint);
         tilemap.draw(&camera, tint);
+        {
+            let grass = app.world.resource::<colony::world::GrassField>();
+            render::scenery::draw_grass_blades(grass, &camera, tint);
+        }
         fog.draw(&camera);
 
         {
@@ -174,6 +179,12 @@ async fn main() {
             render::ui::draw_bottom_stats(&pop, &jobs, &tod, status,
                                                  shown_fps);
         }
+
+        // Tab-held mouse-hover debug inspector. Draws on top of
+        // everything else so its panel doesn't get covered by sprites
+        // or the bottom stat strip.
+        render::inspector::draw_inspector(&app.world, &camera);
+        render::debug_panel::draw_balance_panel(&mut app.world);
 
         next_frame().await;
     }

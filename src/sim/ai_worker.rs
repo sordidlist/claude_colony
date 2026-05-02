@@ -1,14 +1,23 @@
-//! Worker AI: utility-style mode selection on a 1 Hz replan, then per-frame
-//! steering. Reads pheromones + dig queue; writes Velocity, WorkerBrain, and
-//! pheromone deposits.
+//! Worker AI: utility-style mode selection on a 1 Hz replan, then
+//! per-frame steering for whichever mode was chosen. Reads pheromones,
+//! the dig job slot table, and the position of any visible hostile;
+//! writes `Velocity`, mutates `WorkerBrain`, deposits pheromones.
 //!
-//! Mode priorities (highest first):
-//!   - has cargo  → ReturnHome
-//!   - food/pheromone in sense radius → SeekFood
-//!   - dig job available (slot table) → Dig (probabilistic, ~55%)
-//!   - else → Wander
+//! Mode priorities (highest first, evaluated in `choose_mode`):
+//!
+//!   1. Hostile within `WORKER_THREAT_RADIUS` → `FightBack` with a
+//!      locked attack target.
+//!   2. Alarm pheromone above `ALARM_TRIGGER_LEVEL` in or around the
+//!      worker's tile → `FightBack` (gradient-following).
+//!   3. Carrying debris pebble → `DepositDebris`.
+//!   4. Carrying food → `ReturnHome`.
+//!   5. Food pheromone nearby → `SeekFood`.
+//!   6. Dig claim still valid → stay in `Dig`.
+//!   7. Claim a fresh nearest dig job (probabilistic) → `Dig`.
+//!   8. Otherwise → `Wander`.
 
 use bevy_ecs::prelude::*;
+use glam::Vec2;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use crate::config::*;
 use crate::world::{TileGrid, TileType, PheromoneGrid, PheromoneChannel, DigJobs, ReturnFlowField};
@@ -23,21 +32,76 @@ pub fn worker_ai(
     field:       Res<ReturnFlowField>,
     mut phero:   ResMut<PheromoneGrid>,
     mut jobs:    ResMut<DigJobs>,
+    // Direct sightline on hostiles. Workers use this to switch to
+    // FightBack without waiting for alarm pheromone to reach them —
+    // a spider that walks into the colony triggers an immediate
+    // defensive response from any worker within `WORKER_THREAT_RADIUS`.
+    hostiles:    Query<(Entity, &Position),
+                       (Or<(With<Spider>, With<RivalAnt>)>, Without<Ant>)>,
     mut q:       Query<(Entity, &mut Position, &mut Velocity, &mut WorkerBrain,
-                        &mut VisualState, &mut Cargo, &Ant)>,
+                        &mut VisualState, &mut Cargo, &Ant, &mut AiTrace)>,
 ) {
     let dt = time.dt;
     let mut rng = StdRng::seed_from_u64(
         (time.total * 1000.0) as u64 ^ 0x9E37_79B9_7F4A_7C15
     );
 
-    for (e, mut pos, mut vel, mut brain, mut vis, mut cargo, ant) in q.iter_mut() {
+    let hostile_pos: Vec<(Entity, Vec2)> =
+        hostiles.iter().map(|(e, p)| (e, p.0)).collect();
+    let threat_r2 = WORKER_THREAT_RADIUS * WORKER_THREAT_RADIUS;
+
+    for (e, mut pos, mut vel, mut brain, mut vis, mut cargo, ant, mut trace)
+        in q.iter_mut()
+    {
         if ant.kind != AntKind::Worker { continue; }
 
         brain.replan_in -= dt;
+
+        // Per-frame hostile reflex. The full `choose_mode` only runs
+        // at the 1 Hz replan, which means a spider can walk through
+        // a busy hauler's threat radius and the hauler keeps
+        // depositing for up to ~1.3s before noticing. That's fatal
+        // at scale: spiders cross past dozens of workers without
+        // engagement. The reflex is cheap (a single distance scan
+        // over the hostile list — 5K ops per frame at 1000 workers
+        // × 5 hostiles) and short-circuits anything that isn't
+        // already FightBack.
+        if !matches!(brain.mode, WorkerMode::FightBack) {
+            let mut nearest_threat: Option<(Entity, f32)> = None;
+            for &(he, hp) in &hostile_pos {
+                let dx = hp.x - pos.0.x;
+                let dy = hp.y - pos.0.y;
+                let d2 = dx*dx + dy*dy;
+                if d2 < threat_r2 && nearest_threat.map_or(true, |(_, b)| d2 < b) {
+                    nearest_threat = Some((he, d2));
+                }
+            }
+            if let Some((he, _)) = nearest_threat {
+                let prev_mode = brain.mode;
+                release_dig(&mut brain, &mut jobs);
+                cargo.debris = None;
+                cargo.amount = 0;
+                brain.haul_direction   = 0;
+                brain.haul_target_dist = 0;
+                brain.haul_attempts    = 0;
+                brain.attack_target    = Some(he);
+                brain.mode = WorkerMode::FightBack;
+                brain.replan_in = 1.0 / ANT_REPLAN_HZ;
+                trace.record(time.total,
+                    format!("{:?} → FightBack (hostile sighted)", prev_mode));
+            }
+        }
+
         if brain.replan_in <= 0.0 {
             brain.replan_in = 1.0 / ANT_REPLAN_HZ + rng.gen_range(-0.3..0.3);
-            choose_mode(e, &pos, &mut brain, &mut cargo, &grid, &phero, &mut jobs, &mut rng);
+            let prev_mode = brain.mode;
+            choose_mode(e, &pos, &mut brain, &mut cargo, &grid, &phero,
+                        &mut jobs, &hostile_pos, threat_r2, &mut rng);
+            if brain.mode != prev_mode {
+                let detail = mode_detail(&brain);
+                trace.record(time.total,
+                    format!("{:?} → {:?}{}", prev_mode, brain.mode, detail));
+            }
         }
 
         match brain.mode {
@@ -53,7 +117,8 @@ pub fn worker_ai(
                                     &grid, &field, &mut rng);
             }
             WorkerMode::FightBack => {
-                step_fight_back(&mut pos, &mut vel, &phero, &mut rng);
+                step_fight_back(&pos, &mut vel, &mut brain, &hostile_pos,
+                                &phero, &mut rng);
             }
         }
 
@@ -94,28 +159,56 @@ fn choose_mode(
     _grid: &TileGrid,
     phero: &PheromoneGrid,
     jobs:  &mut DigJobs,
+    hostiles:  &[(Entity, glam::Vec2)],
+    threat_r2: f32,
     rng:   &mut StdRng,
 ) {
     let tx = pos.0.x as i32;
     let ty = pos.0.y as i32;
 
-    // Highest-priority overrides first. These can interrupt a dig.
-    // Top priority: alarm pheromone in the local area means a fight is
-    // happening nearby — drop everything and rush in. *Including*
-    // haulers and food carriers: under attack, the colony wants every
-    // available worker, not just the unencumbered ones. Workers in
-    // Dig mode also abandon their claim. The dropped cargo is the
-    // cost of the swarm response.
+    // Top priority — direct sight of a hostile within the worker's
+    // threat radius. Drop everything and lock onto that specific
+    // entity, so even haulers and dig-committed workers turn to
+    // fight a spider that walks into the colony. This is a cheaper,
+    // tighter trigger than the alarm pheromone path below: it fires
+    // on visual proximity, not on the gradient that builds up after
+    // a hostile has been hanging around.
+    let mut nearest_threat: Option<(Entity, f32)> = None;
+    for &(he, hp) in hostiles {
+        let dx = hp.x - pos.0.x;
+        let dy = hp.y - pos.0.y;
+        let d2 = dx*dx + dy*dy;
+        if d2 < threat_r2 && nearest_threat.map_or(true, |(_, b)| d2 < b) {
+            nearest_threat = Some((he, d2));
+        }
+    }
+    if let Some((he, _)) = nearest_threat {
+        release_dig(brain, jobs);
+        cargo.debris = None;
+        cargo.amount = 0;
+        brain.haul_direction = 0;
+        brain.haul_target_dist = 0;
+        brain.attack_target = Some(he);
+        brain.mode = WorkerMode::FightBack;
+        return;
+    }
+
+    // Secondary trigger — alarm pheromone in the area. Useful when
+    // the hostile is *outside* the worker's direct threat radius
+    // but its alarm has propagated. Fires the same FightBack mode
+    // without a specific entity target; `step_fight_back` falls
+    // back to following the pheromone gradient in that case.
     let alarm_here = phero.level(tx, ty, PheromoneChannel::Alarm);
     let alarm_neighbour = phero
         .strongest_neighbour(tx, ty, PheromoneChannel::Alarm, ALARM_TRIGGER_LEVEL)
         .is_some();
     if alarm_here > ALARM_TRIGGER_LEVEL || alarm_neighbour {
         release_dig(brain, jobs);
-        cargo.debris = None;     // drop dirt to fight
-        cargo.amount = 0;        // drop food to fight
+        cargo.debris = None;
+        cargo.amount = 0;
         brain.haul_direction = 0;
         brain.haul_target_dist = 0;
+        brain.attack_target = None;
         brain.mode = WorkerMode::FightBack;
         return;
     }
@@ -239,9 +332,39 @@ fn step_seek_food(
 /// toward the active fight. Combat damage itself is handled by the
 /// shared `combat_step` system, so all this needs to do is steer.
 fn step_fight_back(
-    pos: &mut Position, vel: &mut Velocity,
-    phero: &PheromoneGrid, rng: &mut StdRng,
+    pos:      &Position,
+    vel:      &mut Velocity,
+    brain:    &mut WorkerBrain,
+    hostiles: &[(Entity, glam::Vec2)],
+    phero:    &PheromoneGrid,
+    rng:      &mut StdRng,
 ) {
+    // Preferred path — drive straight at the locked attack target.
+    // This is what direct-sight detection in `choose_mode` set up.
+    // If the target despawned (got killed) we drop the lock and
+    // fall back to the pheromone-gradient path so the worker keeps
+    // contributing to the swarm.
+    if let Some(target) = brain.attack_target {
+        if let Some(&(_, tp)) = hostiles.iter().find(|(e, _)| *e == target) {
+            let dx = tp.x - pos.0.x;
+            let dy = tp.y - pos.0.y;
+            let d2 = dx*dx + dy*dy;
+            if d2 > 0.05 {
+                let mag = d2.sqrt();
+                vel.0.x = dx / mag * ANT_SPEED;
+                vel.0.y = dy / mag * ANT_SPEED;
+            } else {
+                // On top of the target — hold position so combat
+                // can land hits each tick.
+                vel.0.x = 0.0;
+                vel.0.y = 0.0;
+            }
+            return;
+        }
+        // Target gone — clear the lock and fall through.
+        brain.attack_target = None;
+    }
+
     let tx = pos.0.x as i32;
     let ty = pos.0.y as i32;
     let here = phero.level(tx, ty, PheromoneChannel::Alarm);
@@ -252,13 +375,9 @@ fn step_fight_back(
         vel.0.x = dx as f32 / mag * ANT_SPEED;
         vel.0.y = dy as f32 / mag * ANT_SPEED;
     } else if here > 1.0 {
-        // We're at the alarm peak — the hostile is right here. Stand
-        // ground so combat_step can land hits, instead of random-walking
-        // away from the very target we're meant to engage.
         vel.0.x = 0.0;
         vel.0.y = 0.0;
     } else {
-        // No alarm anywhere — wander until something re-triggers.
         vel.0.x = rng.gen_range(-ANT_SPEED..ANT_SPEED);
         vel.0.y = rng.gen_range(-ANT_SPEED..ANT_SPEED);
     }
@@ -415,6 +534,7 @@ fn step_deposit_debris(
         brain.haul_direction   = 0;
         brain.haul_target_dist = 0;
         brain.haul_stuck_time  = 0.0;
+        brain.haul_attempts    = 0;
         let _ = grid;
         return;
     }
@@ -448,19 +568,50 @@ fn step_deposit_debris(
     // (3) Stuck detection. If horizontal progress has stalled for a
     // couple of seconds, flip the haul direction — the ant has hit
     // something solid (a pile shoulder, a tree trunk, the world edge)
-    // and needs to try the other side. This is what makes haulers
-    // *endeavour* to deposit outside instead of giving up: they keep
-    // pushing toward open ground until they find a drop spot.
+    // and needs to try the other side.
     let cur_x_i = pos.0.x as i16;
     if (cur_x_i - brain.haul_last_x).abs() < 1 {
         brain.haul_stuck_time += 1.0 / 60.0;
         if brain.haul_stuck_time > 1.5 {
             brain.haul_direction = -brain.haul_direction;
             brain.haul_stuck_time = 0.0;
+            brain.haul_attempts = brain.haul_attempts.saturating_add(1);
         }
     } else {
         brain.haul_stuck_time = 0.0;
         brain.haul_last_x = cur_x_i;
+    }
+
+    // (3b) Hard exit — too many flip attempts without a successful
+    // drop means we're trapped between mound shoulders. Cut losses:
+    // place the pebble at any nearby Air tile (or just clear cargo
+    // if none). Without this the worker oscillates above ground
+    // forever, never returning to dig + never encountering the
+    // spiders that have wandered into the colony below.
+    if brain.haul_attempts >= MAX_HAUL_ATTEMPTS {
+        let here_x = pos.0.x as i32;
+        let here_y = pos.0.y as i32;
+        'find: for dy in -1..=1 {
+            for dx in -2..=2 {
+                let nx = here_x + dx;
+                let ny = here_y + dy;
+                if (nx - COLONY_X).abs() < 3 { continue; }
+                if ny < 1 || ny >= SURFACE_ROW { continue; }
+                if grid.get(nx, ny) == TileType::Air {
+                    PENDING_TILE_OPS.with(|c| c.borrow_mut().push((nx, ny, t)));
+                    PENDING_DROP_EVENTS.with(|c| *c.borrow_mut() += 1);
+                    break 'find;
+                }
+            }
+        }
+        cargo.debris = None;
+        brain.haul_direction   = 0;
+        brain.haul_target_dist = 0;
+        brain.haul_stuck_time  = 0.0;
+        brain.haul_attempts    = 0;
+        brain.cycles_completed = brain.cycles_completed.saturating_add(1);
+        brain.mode = WorkerMode::Wander;
+        return;
     }
     let dir = brain.haul_direction as i32;
 
@@ -483,6 +634,10 @@ fn step_deposit_debris(
             brain.haul_direction   = 0;
             brain.haul_target_dist = 0;
             brain.haul_stuck_time  = 0.0;
+            brain.haul_attempts    = 0;
+            // Per-worker cycle ticker — saturating so a long-lived
+            // worker's counter doesn't wrap silently.
+            brain.cycles_completed = brain.cycles_completed.saturating_add(1);
             brain.mode = WorkerMode::Wander;
             return;
         }
@@ -586,4 +741,24 @@ pub fn flush_pending_tile_ops(
                      [0.86, 0.66, 0.34, 1.0]);
         }
     });
+}
+
+/// Format a short suffix that describes *why* a worker chose its new
+/// mode — useful in the inspector trace so a Dig entry shows its
+/// target tile, a DepositDebris entry shows its haul direction, etc.
+fn mode_detail(brain: &WorkerBrain) -> String {
+    match brain.mode {
+        WorkerMode::Dig => match brain.dig_target {
+            Some((tx, ty)) => format!(" target ({},{})", tx, ty),
+            None           => String::new(),
+        },
+        WorkerMode::DepositDebris => {
+            if brain.haul_target_dist != 0 {
+                format!(" haul {} dist {}",
+                    if brain.haul_direction >= 0 { "→" } else { "←" },
+                    brain.haul_target_dist)
+            } else { String::new() }
+        }
+        _ => String::new(),
+    }
 }
